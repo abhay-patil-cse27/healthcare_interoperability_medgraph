@@ -1,0 +1,230 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   MedGraph Design System — Wise-Inspired Healthcare Theme
+   Forest Green + Lime Accent + Canvas White
+   ══════════════════════════════════════════════════════════════════════════════ */
+
+@layer base {
+  * {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  body {
+    background-color: #ffffff;
+    color: #0e0f0c;
+    font-family: 'Inter', ui-sans-serif, system-ui, -apple-system, sans-serif;
+    font-feature-settings: "calt";
+    font-size: 16px;
+    line-height: 1.5;
+    letter-spacing: -0.003em;
+  }
+
+  ::selection {
+    background-color: rgba(159, 232, 112, 0.3);
+    color: #163300;
+  }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #e8ebe6; border-radius: 9999px; }
+  ::-webkit-scrollbar-thumb:hover { background: #868685; }
+}
+
+@layer components {
+  /* ── Typography ──────────────────────────────────────────────────────────── */
+  .page-title {
+    @apply text-[25px] leading-[1.25] tracking-[-0.008em] font-bold text-[#0e0f0c];
+  }
+
+  .section-title {
+    @apply text-[20px] leading-[1.4] tracking-[-0.006em] font-semibold text-[#0e0f0c];
+  }
+
+  .label {
+    @apply text-[12px] leading-[1.44] tracking-[0.005em] font-semibold text-[#6a6c6a] uppercase mb-1 block;
+  }
+
+  .text-body-muted {
+    @apply text-[14px] leading-[1.43] text-[#454745];
+  }
+
+  /* ── Buttons ─────────────────────────────────────────────────────────────── */
+  .btn-primary {
+    @apply inline-flex items-center gap-2 px-6 py-2.5 
+           bg-[#9fe870] text-[#163300] font-semibold text-[14px]
+           rounded-[9999px] border border-transparent
+           shadow-[0_0_0_1px_rgba(14,15,12,0.12)]
+           transition-all duration-200 ease-out
+           hover:shadow-[0_0_24px_rgba(159,232,112,0.35)] hover:brightness-105
+           active:scale-[0.97]
+           disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  .btn-secondary {
+    @apply inline-flex items-center gap-2 px-5 py-2.5
+           bg-transparent text-[#163300] font-semibold text-[14px]
+           rounded-[9999px] border border-[#163300]/20
+           transition-all duration-200 ease-out
+           hover:bg-[#163300]/5 hover:border-[#163300]/40
+           active:scale-[0.97]
+           disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  .btn-ghost {
+    @apply inline-flex items-center gap-2 px-4 py-2
+           bg-transparent text-[#454745] font-medium text-[14px]
+           rounded-[9999px] border border-transparent
+           transition-all duration-200 ease-out
+           hover:bg-[#e8ebe6] hover:text-[#0e0f0c]
+           active:scale-[0.97];
+  }
+
+  .btn-danger {
+    @apply inline-flex items-center gap-2 px-5 py-2.5
+           bg-[#cb272f] text-white font-semibold text-[14px]
+           rounded-[9999px] border border-transparent
+           transition-all duration-200 ease-out
+           hover:brightness-110 active:scale-[0.97];
+  }
+
+  /* ── Cards ───────────────────────────────────────────────────────────────── */
+  .card {
+    @apply bg-white rounded-[28px] border border-[#e8ebe6]/80
+           shadow-[0_0_0_1px_rgba(14,15,12,0.12)] transition-all duration-200;
+  }
+
+  .card-elevated {
+    @apply bg-white rounded-[28px] shadow-[0_6px_20px_rgba(0,0,0,0.08)]
+           transition-all duration-200 hover:shadow-[0_10px_32px_rgba(0,0,0,0.15)];
+  }
+
+  .card-dark {
+    @apply bg-[#163300] text-white rounded-[37.54px] p-8;
+  }
+
+  .card-cyan {
+    @apply bg-[#ecf9f9] rounded-[28px] p-7 border-none;
+  }
+
+  /* ── Inputs ──────────────────────────────────────────────────────────────── */
+  .input {
+    @apply w-full px-4 py-3 bg-white text-[#0e0f0c] text-[14px]
+           rounded-[10px] border border-[#e8ebe6]
+           placeholder:text-[#868685]
+           transition-all duration-200
+           focus:outline-none focus:border-[#163300]/40 focus:shadow-[inset_0_0_0_1px_rgb(134,134,133)]
+           disabled:bg-[#e8ebe6]/50 disabled:text-[#868685] disabled:cursor-not-allowed;
+  }
+
+  .input-sm {
+    @apply w-full px-3 py-2 bg-white text-[#0e0f0c] text-[12px]
+           rounded-[10px] border border-[#e8ebe6]
+           placeholder:text-[#868685]
+           transition-all duration-200
+           focus:outline-none focus:border-[#163300]/40 focus:shadow-[inset_0_0_0_1px_rgb(134,134,133)];
+  }
+
+  /* ── Badges ──────────────────────────────────────────────────────────────── */
+  .badge {
+    @apply inline-flex items-center gap-1 px-3 py-0.5
+           text-[12px] font-semibold rounded-[16px];
+  }
+
+  .badge-green {
+    @apply bg-[#9fe870]/20 text-[#163300];
+  }
+
+  .badge-blue {
+    @apply bg-[#0b4c72]/10 text-[#0b4c72];
+  }
+
+  .badge-yellow {
+    @apply bg-[#ffd300]/15 text-amber-800;
+  }
+
+  .badge-red {
+    @apply bg-[#cb272f]/10 text-[#cb272f];
+  }
+
+  .badge-gray {
+    @apply bg-[#e8ebe6] text-[#6a6c6a];
+  }
+
+  /* ── Modal Overlay ───────────────────────────────────────────────────────── */
+  .modal-overlay {
+    @apply fixed inset-0 bg-[#0e0f0c]/40 backdrop-blur-sm z-50
+           flex items-center justify-center p-4;
+  }
+
+  .modal-content {
+    @apply bg-white rounded-[28px] shadow-[0_6px_20px_rgba(0,0,0,0.08)] w-full max-w-md p-7 animate-slide-up;
+  }
+
+  /* ── Status Indicators ───────────────────────────────────────────────────── */
+  .status-dot {
+    @apply w-2 h-2 rounded-full;
+  }
+
+  .status-dot-active {
+    @apply bg-[#9fe870] animate-pulse;
+  }
+
+  .status-dot-warning {
+    @apply bg-[#ffd300];
+  }
+
+  .status-dot-error {
+    @apply bg-[#cb272f];
+  }
+
+  .status-dot-inactive {
+    @apply bg-[#868685];
+  }
+
+  /* ── Dividers ────────────────────────────────────────────────────────────── */
+  .divider {
+    @apply border-t border-[#e8ebe6];
+  }
+
+  /* ── Prose (for markdown rendering) ──────────────────────────────────────── */
+  .prose-medical h3 {
+    @apply text-[20px] font-semibold text-[#0e0f0c] mt-4 mb-2 first:mt-0;
+  }
+  .prose-medical h4 {
+    @apply text-[16px] font-semibold text-[#454745] mt-3 mb-1;
+  }
+  .prose-medical p {
+    @apply text-[14px] text-[#454745] leading-relaxed mb-2 last:mb-0;
+  }
+  .prose-medical ul {
+    @apply space-y-1 mb-3 pl-1;
+  }
+  .prose-medical li {
+    @apply text-[14px] text-[#454745] flex gap-2 leading-relaxed;
+  }
+  .prose-medical strong {
+    @apply font-semibold text-[#0e0f0c];
+  }
+  .prose-medical code {
+    @apply px-1.5 py-0.5 bg-[#e8ebe6] rounded text-[12px] font-mono text-[#163300];
+  }
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+
+  .gradient-forest {
+    background: linear-gradient(135deg, #163300 0%, #054d28 100%);
+  }
+
+  .gradient-lime {
+    background: linear-gradient(135deg, #9fe870 0%, #7dd956 100%);
+  }
+}
