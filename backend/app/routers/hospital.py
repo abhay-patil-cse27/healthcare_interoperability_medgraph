@@ -95,12 +95,14 @@ async def list_staff(
     current_user = Depends(require_permission(Permission.AUDIT_READ_HOSPITAL.value))
 ):
     hospital_id = current_user.get("hospital_id")
-    query: dict = {"role": {"$nin": ["patient"]}}
-    if hospital_id:
-        query["hospital_id"] = hospital_id
+    # DynamoDB doesn't support $nin — fetch all and filter in-memory
+    query = {"hospital_id": hospital_id} if hospital_id else {}
     docs = await db.users.find(query).to_list(500)
     safe = []
     for d in docs:
+        # Exclude patients from staff list
+        if d.get("role") == "patient":
+            continue
         d = _clean(d)
         d.setdefault("permissions", [])
         d.setdefault("is_active", True)
@@ -113,17 +115,109 @@ async def hospital_stats(
     current_user = Depends(require_permission(Permission.AUDIT_READ_HOSPITAL.value))
 ):
     hospital_id = current_user.get("hospital_id")
-    base = {"hospital_id": hospital_id} if hospital_id else {}
-    total_staff   = await db.users.count_documents({**base, "role": {"$nin": ["patient"]}})
-    total_depts   = await db.departments.count_documents(base)
-    total_doctors = await db.users.count_documents({**base, "role": {"$in": ["doctor", "surgeon"]}})
-    total_nurses  = await db.users.count_documents({**base, "role": {"$in": ["nurse", "ward_incharge"]}})
-    hospital = await db.hospitals.find_one({"hospital_id": hospital_id})
+    # Fetch all users for this hospital and count in-memory (DynamoDB doesn't support $nin/$in in count)
+    query = {"hospital_id": hospital_id} if hospital_id else {}
+    all_users = await db.users.find(query).to_list(1000)
+    
+    staff = [u for u in all_users if u.get("role") != "patient"]
+    doctors = [u for u in staff if u.get("role") in ["doctor", "surgeon"]]
+    nurses = [u for u in staff if u.get("role") in ["nurse", "ward_incharge"]]
+    
+    depts = await db.departments.find(query).to_list(200)
+    
+    hospital = await db.hospitals.find_one({"hospital_id": hospital_id}) if hospital_id else None
     return {
-        "total_staff":       total_staff,
-        "total_departments": total_depts,
-        "total_doctors":     total_doctors,
-        "total_nurses":      total_nurses,
+        "total_staff":       len(staff),
+        "total_departments": len(depts),
+        "total_doctors":     len(doctors),
+        "total_nurses":      len(nurses),
         "hospital_name":     hospital["name"] if hospital else "Your Hospital",
         "hospital_id":       hospital_id,
     }
+
+
+@router.patch("/staff/{user_id}")
+async def update_staff_profile(
+    user_id: str,
+    updates: dict,
+    db = Depends(get_db),
+    current_user = Depends(require_permission(Permission.USER_CREATE_STAFF.value))
+):
+    """Hospital Admin can update staff profiles — role, department, specialization, active status."""
+    user = await db.users.find_one({"user_id": user_id})
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    # Hospital admin can only manage staff in their hospital
+    hospital_id = current_user.get("hospital_id")
+    if hospital_id and user.get("hospital_id") != hospital_id:
+        raise HTTPException(status_code=403, detail="Cannot manage staff from another hospital")
+    
+    # Cannot modify patients or super admins
+    if user.get("role") in ["patient", "super_admin", "govt_admin"]:
+        raise HTTPException(status_code=403, detail="Cannot modify this user type")
+    
+    # Allowed fields for hospital admin to update
+    allowed_fields = {
+        "full_name", "phone", "specialization", "license_number",
+        "department_id", "sub_role", "is_active",
+    }
+    safe_updates = {k: v for k, v in updates.items() if k in allowed_fields}
+    
+    if not safe_updates:
+        raise HTTPException(status_code=400, detail="No valid fields to update")
+    
+    # If changing role, update permissions too
+    if "role" in updates and updates["role"] not in ["patient", "super_admin", "govt_admin"]:
+        try:
+            new_role = UserRole(updates["role"])
+            safe_updates["role"] = new_role.value
+            safe_updates["permissions"] = [p.value for p in ROLE_PERMISSIONS.get(new_role, [])]
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid role")
+    
+    await db.users.update_one({"user_id": user_id}, {"$set": safe_updates})
+    
+    updated = await db.users.find_one({"user_id": user_id})
+    return _clean(updated)
+
+
+@router.patch("/staff/{user_id}/deactivate")
+async def deactivate_staff(
+    user_id: str,
+    db = Depends(get_db),
+    current_user = Depends(require_permission(Permission.USER_CREATE_STAFF.value))
+):
+    """Hospital Admin deactivates a staff account."""
+    user = await db.users.find_one({"user_id": user_id})
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    if user.get("role") in ["patient", "super_admin", "govt_admin"]:
+        raise HTTPException(status_code=403, detail="Cannot deactivate this user type")
+    
+    hospital_id = current_user.get("hospital_id")
+    if hospital_id and user.get("hospital_id") != hospital_id:
+        raise HTTPException(status_code=403, detail="Cannot manage staff from another hospital")
+    
+    await db.users.update_one({"user_id": user_id}, {"$set": {"is_active": False}})
+    return {"status": "deactivated", "user_id": user_id}
+
+
+@router.patch("/staff/{user_id}/activate")
+async def activate_staff(
+    user_id: str,
+    db = Depends(get_db),
+    current_user = Depends(require_permission(Permission.USER_CREATE_STAFF.value))
+):
+    """Hospital Admin reactivates a staff account."""
+    user = await db.users.find_one({"user_id": user_id})
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    hospital_id = current_user.get("hospital_id")
+    if hospital_id and user.get("hospital_id") != hospital_id:
+        raise HTTPException(status_code=403, detail="Cannot manage staff from another hospital")
+    
+    await db.users.update_one({"user_id": user_id}, {"$set": {"is_active": True}})
+    return {"status": "activated", "user_id": user_id}

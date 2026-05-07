@@ -35,6 +35,21 @@ export default function HospitalAdminDashboard() {
     }
   };
 
+  const handleToggleActive = async (staffMember) => {
+    try {
+      if (staffMember.is_active) {
+        await hospitalAPI.deactivateStaff(staffMember.user_id);
+        toast.success(`${staffMember.full_name} deactivated`);
+      } else {
+        await hospitalAPI.activateStaff(staffMember.user_id);
+        toast.success(`${staffMember.full_name} activated`);
+      }
+      fetchAll();
+    } catch (err) {
+      toast.error(err.response?.data?.detail || "Failed to update staff status");
+    }
+  };
+
   const DEPT_TYPE_COLOR = {
     opd:      "bg-blue-50 text-blue-600",
     ipd:      "bg-emerald-50 text-emerald-600",
@@ -146,19 +161,27 @@ export default function HospitalAdminDashboard() {
               <p className="text-slate-500 font-medium">No staff found</p>
             </div>
           ) : (
-            <div className="card divide-y divide-slate-100 max-h-96 overflow-auto">
+            <div className="card divide-y divide-slate-100 max-h-[480px] overflow-auto">
               {staff.map(s => (
-                <div key={s.user_id} className="p-3 flex items-center gap-3 hover:bg-slate-50">
+                <div key={s.user_id} className="p-3 flex items-center gap-3 hover:bg-slate-50 group">
                   <div className="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center text-white text-xs font-bold shrink-0">
                     {s.full_name.split(" ").map(n => n[0]).join("").slice(0,2)}
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-semibold text-slate-900 truncate">{s.full_name}</p>
-                    <p className="text-xs text-slate-500 capitalize">{s.role.replace(/_/g," ")}</p>
+                    <p className="text-xs text-slate-500 capitalize">{s.role.replace(/_/g," ")}{s.specialization ? ` · ${s.specialization}` : ""}</p>
                   </div>
-                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${s.is_active ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-500"}`}>
-                    {s.is_active ? "Active" : "Inactive"}
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${s.is_active ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-600"}`}>
+                      {s.is_active ? "Active" : "Inactive"}
+                    </span>
+                    <button
+                      onClick={() => handleToggleActive(s)}
+                      className="opacity-0 group-hover:opacity-100 text-xs px-2 py-1 rounded border border-slate-200 hover:bg-slate-100 text-slate-600 transition-all"
+                    >
+                      {s.is_active ? "Deactivate" : "Activate"}
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>

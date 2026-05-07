@@ -86,6 +86,9 @@ export const hospitalAPI = {
   inviteStaff:     (data) => api.post("/hospital/staff", data),
   listStaff:       ()     => api.get("/hospital/staff"),
   getStats:        ()     => api.get("/hospital/stats"),
+  updateStaff:     (userId, data) => api.patch(`/hospital/staff/${userId}`, data),
+  deactivateStaff: (userId) => api.patch(`/hospital/staff/${userId}/deactivate`),
+  activateStaff:   (userId) => api.patch(`/hospital/staff/${userId}/activate`),
 };
 
 // ── Patient Search (name / MRN / phone / ABHA) ────────────────────────────
@@ -178,6 +181,7 @@ export const documentsAPI = {
   myDocuments:    ()   => api.get("/documents/my-documents"),
   getMetadata:    (id) => api.get(`/documents/${id}`),
   getPdfUrl:      (id) => `${BASE_URL}/documents/${id}/pdf`,
+  downloadPdf:   (id) => api.get(`/documents/${id}/pdf`, { responseType: "blob" }),
   getFhir:        (id) => api.get(`/documents/${id}/fhir`),
   triggerScreening:(id) => api.post(`/documents/${id}/trigger-screening`),
 };
@@ -199,3 +203,12 @@ export const screeningAPI = {
 };
 
 export default api;
+
+// ── Vaidya Guide Bot (auth-only) ──────────────────────────────────────────
+export const vaidyaAPI = {
+  chat: (message, history = [], userRole = null) =>
+    api.post("/vaidya/chat", { message, history, user_role: userRole }),
+};
+
+
+
