@@ -41,13 +41,17 @@ async def mark_read(
     current_user = Depends(get_current_user)
 ):
     uid = current_user["user_id"]
-    doc = await db.notifications.find_one({"notification_id": notification_id})
+    doc = await db.notifications.find_one({"id": notification_id})
+    if not doc:
+        # Try with notification_id field as fallback
+        doc = await db.notifications.find_one({"notification_id": notification_id})
     if doc:
         read_by = doc.get("read_by") or []
         if uid not in read_by:
             read_by.append(uid)
+            pk = {"id": doc["id"]} if "id" in doc else {"notification_id": notification_id}
             await db.notifications.update_one(
-                {"notification_id": notification_id},
+                pk,
                 {"$set": {"read_by": read_by}},
             )
     return {"status": "ok"}

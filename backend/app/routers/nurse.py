@@ -182,19 +182,20 @@ async def add_ipd_note(
     note["author_id"]   = current_user["user_id"]
     note["author_name"] = current_user.get("full_name", "")
     note["author_role"] = current_user["role"]
-    note["timestamp"]   = datetime.utcnow()
+    note["timestamp"]   = datetime.utcnow().isoformat()
     await db.ipd_notes.insert_one(note)
 
     # Log activity
+    log_id = str(uuid.uuid4())
     await db.activity_logs.insert_one({
-        "log_id":      str(uuid.uuid4()),
+        "log_id":      log_id,
         "actor_id":    current_user["user_id"],
         "actor_name":  current_user.get("full_name", ""),
         "actor_role":  current_user["role"],
         "action":      "ipd_note_added",
         "resource":    f"patient/{note.get('patient_id','?')}",
         "hospital_id": current_user.get("hospital_id"),
-        "timestamp":   datetime.utcnow(),
+        "timestamp":   datetime.utcnow().isoformat(),
     })
     note.pop("_id", None)
     return note
@@ -208,9 +209,11 @@ async def log_vitals(
     vital = _sanitize_dict(vital)
     if "vital_id" not in vital:
         vital["vital_id"] = str(uuid.uuid4())
+    # DynamoDB table uses 'id' as partition key
+    vital["id"] = vital["vital_id"]
     vital["recorded_by"]   = current_user["user_id"] if current_user["role"] != "ward_bot" else "ward_bot"
     vital["recorder_name"] = current_user.get("full_name", "Ward Bot")
-    vital["recorded_at"]   = datetime.utcnow()
+    vital["recorded_at"]   = datetime.utcnow().isoformat()
 
     # Alert logic
     temp = vital.get("temperature_c")
@@ -225,8 +228,10 @@ async def log_vitals(
 
     # Create notification if alert
     if vital["is_alert"]:
+        notif_id = str(uuid.uuid4())
         await db.notifications.insert_one({
-            "notification_id": str(uuid.uuid4()),
+            "id": notif_id,
+            "notification_id": notif_id,
             "type":      "vitals_alert",
             "priority":  "high",
             "title":     "⚠️ Critical Vitals Alert",
@@ -235,7 +240,7 @@ async def log_vitals(
             "for_roles": ["doctor", "surgeon", "nurse", "ward_incharge"],
             "hospital_id": current_user.get("hospital_id"),
             "read_by":   [],
-            "created_at":datetime.utcnow(),
+            "created_at":datetime.utcnow().isoformat(),
         })
 
     vital.pop("_id", None)

@@ -419,7 +419,7 @@ class DynamoTable:
         key_names = set(key.keys())
         # Common primary key patterns in our tables
         pk_patterns = [
-            {"user_id"}, {"consent_id"}, {"session_id"}, {"screening_id"},
+            {"id"}, {"user_id"}, {"consent_id"}, {"session_id"}, {"screening_id"},
             {"bundle_id"}, {"hospital_id"}, {"counter_id"}, {"cache_key"},
             {"document_id"}, {"log_id"}, {"note_id"}, {"vital_id"},
             {"appointment_id"}, {"admission_id"}, {"claim_id"}, {"mlc_id"},
