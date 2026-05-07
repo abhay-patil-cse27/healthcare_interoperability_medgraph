@@ -6,11 +6,7 @@ for identical (patient_id, query) pairs within a time window.
 
 Architecture:
   - L1: In-process TTLCache (cachetools) — zero-latency, per-worker
-  - L2: MongoDB persistent cache — survives restarts, shared across workers
-
-In production with multiple workers, replace L1 with a Redis client.
-The interface is intentionally Redis-compatible so you can swap the backend
-by changing only this file.
+  - L2: DynamoDB persistent cache — survives restarts, shared across workers
 
 Cache key: SHA-256( patient_id + "::" + normalized_query )
 TTL: configurable, default 10 minutes
@@ -63,35 +59,36 @@ class ResponseCacheService:
             _L1.pop(k, None)
         logger.info("cache_invalidated_patient", patient_id=patient_id, evicted=len(keys_to_del))
 
-    # ── L2: MongoDB Persistent Cache ──────────────────────────────────────
+    # ── L2: DynamoDB Persistent Cache ─────────────────────────────────────
 
     async def get_l2(self, db, patient_id: str, query: str) -> Optional[dict]:
         key = _make_key(patient_id, query)
-        doc = await db[CACHE_COL].find_one({"_id": key})
+        doc = await db[CACHE_COL].find_one({"cache_key": key})
         if not doc:
             return None
-        # Honour TTL manually (MongoDB TTL indexes fire every 60s, so we double-check)
-        age_s = time.time() - doc["cached_at_ts"]
+        # Honour TTL manually
+        age_s = time.time() - doc.get("cached_at_ts", 0)
         if age_s > _L1_TTL_SECONDS:
-            await db[CACHE_COL].delete_one({"_id": key})
+            await db[CACHE_COL].delete_one({"cache_key": key})
             return None
         logger.info("cache_l2_hit", key=key[:12], age_s=int(age_s))
-        return doc["payload"]
+        return doc.get("payload")
 
     async def set_l2(self, db, patient_id: str, query: str, response: dict) -> None:
         key = _make_key(patient_id, query)
         now = time.time()
-        await db[CACHE_COL].replace_one(
-            {"_id": key},
-            {
-                "_id": key,
-                "patient_id": patient_id,
-                "cached_at_ts": now,
-                "cached_at": datetime.now(timezone.utc),
-                "payload": response,
-            },
-            upsert=True,
-        )
+        # Upsert: delete old + insert new (DynamoDB doesn't have replace_one)
+        try:
+            await db[CACHE_COL].delete_one({"cache_key": key})
+        except Exception:
+            pass
+        await db[CACHE_COL].insert_one({
+            "cache_key": key,
+            "patient_id": patient_id,
+            "cached_at_ts": now,
+            "cached_at": datetime.now(timezone.utc).isoformat(),
+            "payload": response,
+        })
 
     # ── Unified Get (L1 → L2) ─────────────────────────────────────────────
 

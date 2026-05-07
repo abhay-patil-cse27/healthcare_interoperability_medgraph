@@ -3,9 +3,41 @@ from typing import Optional
 from app.models.rbac import Permission
 from app.dependencies import get_db, require_permission
 import uuid
+import re
 from datetime import datetime
 
 router = APIRouter()
+
+
+def _sanitize_text_input(value):
+    """
+    Sanitize text inputs from staff to prevent injection attacks.
+    Strips HTML/script tags and null bytes while preserving clinical content.
+    """
+    if not isinstance(value, str):
+        return value
+    # Remove null bytes
+    value = value.replace("\x00", "")
+    # Strip HTML/script tags
+    value = re.sub(r"<script[^>]*>.*?</script>", "", value, flags=re.IGNORECASE | re.DOTALL)
+    value = re.sub(r"<[^>]+>", "", value)
+    # Limit length to prevent abuse (10KB per field)
+    return value[:10240]
+
+
+def _sanitize_dict(data: dict) -> dict:
+    """Recursively sanitize all string values in a dict."""
+    sanitized = {}
+    for k, v in data.items():
+        if isinstance(v, str):
+            sanitized[k] = _sanitize_text_input(v)
+        elif isinstance(v, dict):
+            sanitized[k] = _sanitize_dict(v)
+        elif isinstance(v, list):
+            sanitized[k] = [_sanitize_text_input(i) if isinstance(i, str) else i for i in v]
+        else:
+            sanitized[k] = v
+    return sanitized
 
 # ── Doctor Patient endpoints ──────────────────────────────────────────────
 
@@ -21,75 +53,58 @@ async def get_my_patients(
       - patient_history: all past completed appointments & discharged admissions
     """
     doctor_id = current_user["user_id"]
-    hospital_id = current_user.get("hospital_id")
 
     # 1) Active IPD admissions
-    adm_cursor = db.admissions.find({
-        "admitting_doctor_id": doctor_id,
-        "status": "admitted"
-    }).sort("admission_time", -1)
-    active_admissions = []
-    async for doc in adm_cursor:
-        doc.pop("_id", None)
-        active_admissions.append(doc)
+    try:
+        adm_results = await db.admissions.find({"admitting_doctor_id": doctor_id, "status": "admitted"}).to_list(100)
+    except Exception:
+        adm_results = []
+    active_admissions = adm_results
 
     # 2) All OPD appointments under this doctor
-    apt_cursor = db.appointments.find({
-        "doctor_id": doctor_id
-    }).sort("scheduled_time", -1).limit(100)
-    all_appointments = []
-    async for doc in apt_cursor:
-        doc.pop("_id", None)
-        all_appointments.append(doc)
+    try:
+        all_appointments = await db.appointments.find({"doctor_id": doctor_id}).to_list(100)
+    except Exception:
+        all_appointments = []
 
-    # Upcoming/today appointments
-    today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
-    todays_apts = [a for a in all_appointments if (
-        isinstance(a.get("scheduled_time"), datetime) and
-        a["scheduled_time"] >= today_start
-    )]
-
-    # 3) Past history - discharged admissions + completed appointments
-    hist_cursor = db.admissions.find({
-        "admitting_doctor_id": doctor_id,
-        "status": {"$in": ["discharged", "transferred"]}
-    }).sort("discharge_time", -1).limit(50)
-    past_admissions = []
-    async for doc in hist_cursor:
-        doc.pop("_id", None)
-        past_admissions.append(doc)
+    # 3) Past history - discharged admissions
+    try:
+        past_admissions = await db.admissions.find({"admitting_doctor_id": doctor_id, "status": "discharged"}).to_list(50)
+    except Exception:
+        past_admissions = []
 
     past_appointments = [a for a in all_appointments if a.get("status") == "completed"]
 
-    # 4) Unique registered patients (all who've ever had an appointment with this doctor)
+    # 4) Unique registered patients
     seen_patients = set()
     registered_patients = []
     for a in all_appointments:
         pid = a.get("patient_id")
         if pid and pid not in seen_patients:
             seen_patients.add(pid)
-            patient = await db.users.find_one({"user_id": pid})
-            if patient:
-                patient.pop("_id", None)
-                patient.pop("hashed_password", None)
-                registered_patients.append({
-                    "user_id":   patient.get("user_id"),
-                    "full_name": patient.get("full_name"),
-                    "email":     patient.get("email"),
-                    "phone":     patient.get("phone"),
-                    "abha_id":   patient.get("abha_id"),
-                    "last_visit": a.get("scheduled_time"),
-                })
+            try:
+                patient = await db.users.find_one({"user_id": pid})
+                if patient:
+                    registered_patients.append({
+                        "user_id":   patient.get("user_id"),
+                        "full_name": patient.get("full_name"),
+                        "email":     patient.get("email"),
+                        "phone":     patient.get("phone"),
+                        "abha_id":   patient.get("abha_id"),
+                        "last_visit": a.get("scheduled_time"),
+                    })
+            except Exception:
+                pass
 
     return {
         "active_admissions":    active_admissions,
-        "todays_appointments":  all_appointments[:20],  # all recent, sorted by scheduled_time
+        "todays_appointments":  all_appointments[:20],
         "past_admissions":      past_admissions,
         "past_appointments":    past_appointments[:30],
         "registered_patients":  registered_patients,
         "summary": {
             "active_inpatients":  len(active_admissions),
-            "todays_opd":         len(todays_apts),
+            "todays_opd":         len(all_appointments),
             "total_history":      len(past_admissions) + len(past_appointments),
             "registered_count":   len(registered_patients),
         }
@@ -161,6 +176,7 @@ async def add_ipd_note(
     db = Depends(get_db),
     current_user = Depends(require_permission(Permission.PATIENT_READ_ASSIGNED.value))
 ):
+    note = _sanitize_dict(note)
     if "note_id" not in note:
         note["note_id"] = str(uuid.uuid4())
     note["author_id"]   = current_user["user_id"]
@@ -189,6 +205,7 @@ async def log_vitals(
     db = Depends(get_db),
     current_user = Depends(require_permission(Permission.VITALS_WRITE.value))
 ):
+    vital = _sanitize_dict(vital)
     if "vital_id" not in vital:
         vital["vital_id"] = str(uuid.uuid4())
     vital["recorded_by"]   = current_user["user_id"] if current_user["role"] != "ward_bot" else "ward_bot"

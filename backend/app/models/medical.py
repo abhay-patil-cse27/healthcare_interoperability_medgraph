@@ -23,8 +23,8 @@ class MemoryIngestResponse(BaseModel):
 class ChatRequest(BaseModel):
     patient_id: str
     query: str = Field(min_length=3)
-    requester_id: str
-    requester_role: str
+    requester_id: Optional[str] = None
+    requester_role: Optional[str] = None
     session_id: Optional[str] = None   # If None, a new session is created automatically
 
 
@@ -40,12 +40,13 @@ class ChatResponse(BaseModel):
     total_time_ms: int
     cache_hit: bool = False
     history_turns: int = 0
+    guardrail_action: str = "NONE"  # "NONE" | "BLOCKED"
 
 
 class FHIRExchangeRequest(BaseModel):
     patient_id: str
-    doctor_id: str
-    consent_id: str
+    doctor_id: Optional[str] = None
+    consent_id: Optional[str] = None
     include_summary: bool = True
 
 

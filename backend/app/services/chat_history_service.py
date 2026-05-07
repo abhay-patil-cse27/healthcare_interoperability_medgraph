@@ -1,26 +1,19 @@
 """
-Chat History & Session Service
-===============================
-Provides persistent, role-aware conversation history stored in MongoDB.
+Chat History & Session Service — DynamoDB
+==========================================
+Provides persistent, role-aware conversation history stored in DynamoDB.
 
-Collections:
-  - chat_sessions   : one doc per session (created when a user opens a chat window)
-  - chat_messages   : individual messages, indexed by session_id
-
-Design:
-  - Each session is scoped to (user_id, patient_id)
-  - History is windowed to the last N turns to keep LLM context lean
-  - Sessions auto-expire via MongoDB TTL index (set in init_mongo.py)
+Tables:
+  - medgraph-chat-sessions : one item per session (PK: session_id, GSI: user_id+updated_at)
+  - medgraph-chat-messages : individual messages (PK: session_id, SK: timestamp#message_id)
 """
 import uuid
 import structlog
 from datetime import datetime, timezone
 from typing import List, Optional
+from boto3.dynamodb.conditions import Key, Attr
 
 logger = structlog.get_logger()
-
-SESSIONS_COL = "chat_sessions"
-MESSAGES_COL  = "chat_messages"
 
 # How many past turns (user+assistant pairs) to include in LLM context
 HISTORY_WINDOW = 6
@@ -40,47 +33,52 @@ class ChatHistoryService:
         consent_scope: Optional[str] = None,
     ) -> dict:
         """Create a new chat session and return the session document."""
+        now = datetime.now(timezone.utc).isoformat()
         session = {
             "session_id": str(uuid.uuid4()),
             "user_id": user_id,
             "user_role": user_role,
             "patient_id": patient_id,
-            "consent_id": consent_id,
-            "consent_scope": consent_scope,
-            "created_at": datetime.now(timezone.utc),
-            "updated_at": datetime.now(timezone.utc),
+            "consent_id": consent_id or "",
+            "consent_scope": consent_scope or "",
+            "created_at": now,
+            "updated_at": now,
             "message_count": 0,
             "is_active": True,
         }
-        await db[SESSIONS_COL].insert_one(session)
-        session.pop("_id", None)
+        await db.chat_sessions.insert_one(session)
         logger.info("chat_session_created", session_id=session["session_id"], user_id=user_id)
         return session
 
     async def get_session(self, db, session_id: str) -> Optional[dict]:
-        doc = await db[SESSIONS_COL].find_one({"session_id": session_id, "is_active": True})
-        if doc:
-            doc.pop("_id", None)
-        return doc
+        doc = await db.chat_sessions.find_one({"session_id": session_id})
+        if doc and doc.get("is_active"):
+            return doc
+        return None
 
     async def list_sessions(self, db, user_id: str, patient_id: Optional[str] = None) -> List[dict]:
         """List all active sessions for a user, optionally filtered by patient."""
-        query: dict = {"user_id": user_id, "is_active": True}
-        if patient_id:
-            query["patient_id"] = patient_id
-        cursor = db[SESSIONS_COL].find(query).sort("updated_at", -1).limit(50)
-        sessions = []
-        async for doc in cursor:
-            doc.pop("_id", None)
-            sessions.append(doc)
-        return sessions
+        results = await db.chat_sessions.find(
+            filter_dict={"is_active": True} if not patient_id else {"is_active": True, "patient_id": patient_id},
+            index_name="user-index",
+            key_condition=Key("user_id").eq(user_id),
+            limit=50,
+            scan_forward=False,  # Most recent first
+        )
+        return results
 
     async def close_session(self, db, session_id: str, user_id: str) -> bool:
-        result = await db[SESSIONS_COL].update_one(
-            {"session_id": session_id, "user_id": user_id},
-            {"$set": {"is_active": False, "updated_at": datetime.now(timezone.utc)}},
+        doc = await db.chat_sessions.find_one({"session_id": session_id})
+        if not doc or doc.get("user_id") != user_id:
+            return False
+        await db.chat_sessions.update_one(
+            {"session_id": session_id},
+            {"$set": {
+                "is_active": False,
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            }},
         )
-        return result.modified_count > 0
+        return True
 
     # ── Message Management ────────────────────────────────────────────────
 
@@ -93,56 +91,51 @@ class ChatHistoryService:
         metadata: Optional[dict] = None,
     ) -> dict:
         """Append a single message to a session's history."""
+        now = datetime.now(timezone.utc).isoformat()
+        message_id = str(uuid.uuid4())
+
         msg = {
-            "message_id": str(uuid.uuid4()),
             "session_id": session_id,
+            "sort_key": f"{now}#{message_id}",
+            "message_id": message_id,
             "role": role,
             "content": content,
             "metadata": metadata or {},
-            "timestamp": datetime.now(timezone.utc),
+            "timestamp": now,
         }
-        await db[MESSAGES_COL].insert_one(msg)
-        # Keep session updated_at fresh
-        await db[SESSIONS_COL].update_one(
+        await db.chat_messages.insert_one(msg)
+
+        # Update session
+        await db.chat_sessions.update_one(
             {"session_id": session_id},
-            {
-                "$set": {"updated_at": datetime.now(timezone.utc)},
-                "$inc": {"message_count": 1},
-            },
+            {"$set": {"updated_at": now}, "$inc": {"message_count": 1}},
         )
-        msg.pop("_id", None)
         return msg
 
     async def get_history(self, db, session_id: str, limit: int = HISTORY_WINDOW * 2) -> List[dict]:
         """
-        Return the last `limit` messages for a session (already in chronological order).
-        Default limit = HISTORY_WINDOW * 2 because each turn = 1 user + 1 assistant message.
+        Return the last `limit` messages for a session in chronological order.
         """
-        cursor = (
-            db[MESSAGES_COL]
-            .find({"session_id": session_id}, {"_id": 0})
-            .sort("timestamp", -1)
-            .limit(limit)
+        results = await db.chat_messages.find(
+            key_condition=Key("session_id").eq(session_id),
+            limit=limit,
+            scan_forward=False,  # Get most recent first
         )
-        messages = []
-        async for doc in cursor:
-            messages.append(doc)
-        # Reverse to get chronological order (oldest first)
-        messages.reverse()
-        return messages
+        # Reverse to chronological order
+        results.reverse()
+        return results
 
     def build_history_for_llm(self, messages: List[dict]) -> List[dict]:
         """
-        Convert stored messages into the OpenAI/Groq messages format:
+        Convert stored messages into the Bedrock messages format:
           [{"role": "user"|"assistant", "content": "..."}]
         """
         return [{"role": m["role"], "content": m["content"]} for m in messages]
 
     async def get_full_thread(self, db, session_id: str) -> List[dict]:
         """Return all messages for a session (for display in UI history view)."""
-        cursor = (
-            db[MESSAGES_COL]
-            .find({"session_id": session_id}, {"_id": 0})
-            .sort("timestamp", 1)
+        return await db.chat_messages.find(
+            key_condition=Key("session_id").eq(session_id),
+            limit=500,
+            scan_forward=True,
         )
-        return [doc async for doc in cursor]

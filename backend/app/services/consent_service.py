@@ -1,6 +1,8 @@
 import structlog
 from datetime import datetime, timedelta
 from typing import List
+from boto3.dynamodb.conditions import Key, Attr
+
 from app.models.consent import (
     ConsentRequest,
     ConsentRecord,
@@ -11,8 +13,6 @@ from app.models.consent import (
 )
 
 logger = structlog.get_logger()
-
-COLLECTION = "consents"
 
 
 class ConsentService:
@@ -28,12 +28,17 @@ class ConsentService:
             duration_hours=request.duration_hours,
             status=ConsentStatus.PENDING,
         )
-        await db[COLLECTION].insert_one(record.model_dump())
+        item = record.model_dump()
+        # Convert datetime objects to ISO strings for DynamoDB
+        for k, v in item.items():
+            if isinstance(v, datetime):
+                item[k] = v.isoformat()
+        await db.consents.insert_one(item)
         logger.info("consent_request_created", consent_id=record.consent_id)
         return record
 
     async def process_grant(self, grant: ConsentGrant, db) -> ConsentRecord:
-        doc = await db[COLLECTION].find_one({"consent_id": grant.consent_id})
+        doc = await db.consents.find_one({"consent_id": grant.consent_id})
         if not doc:
             raise ValueError(f"Consent {grant.consent_id} not found")
         if doc["patient_id"] != grant.patient_id:
@@ -44,21 +49,18 @@ class ConsentService:
         new_status = ConsentStatus.APPROVED if grant.approved else ConsentStatus.DENIED
         valid_until = None
         if grant.approved:
-            valid_until = datetime.utcnow() + timedelta(hours=doc["duration_hours"])
+            valid_until = (datetime.utcnow() + timedelta(hours=doc["duration_hours"])).isoformat()
 
-        await db[COLLECTION].update_one(
+        await db.consents.update_one(
             {"consent_id": grant.consent_id},
-            {
-                "$set": {
-                    "status": new_status.value,
-                    "valid_until": valid_until,
-                    "granted_at": datetime.utcnow(),
-                }
-            },
+            {"$set": {
+                "status": new_status.value,
+                "valid_until": valid_until,
+                "granted_at": datetime.utcnow().isoformat(),
+            }},
         )
 
         doc.update({"status": new_status.value, "valid_until": valid_until})
-        doc.pop("_id", None)
         return ConsentRecord(**doc)
 
     async def check_access(
@@ -70,34 +72,23 @@ class ConsentService:
                 allowed=True, reason="Self-access", scope="full", filters={}
             )
 
-        query = {
-            "doctor_id": requester_id,
-            "patient_id": patient_id,
-            "status": "approved",
-            "valid_until": {"$gt": datetime.utcnow()},
-        }
-        logger.info("consent_check_query", query_params={
-            "doctor_id": requester_id,
-            "patient_id": patient_id,
-        })
-        consent = await db[COLLECTION].find_one(query)
+        # Query the doctor-patient-index GSI
+        now = datetime.utcnow().isoformat()
+        results = await db.consents.find(
+            filter_dict={"status": "approved"},
+            index_name="doctor-patient-index",
+            key_condition=Key("doctor_id").eq(requester_id) & Key("patient_id").eq(patient_id),
+        )
+
+        # Filter for valid (non-expired) consents
+        consent = None
+        for r in results:
+            if r.get("status") == "approved" and r.get("valid_until", "") > now:
+                consent = r
+                break
 
         if not consent:
-            # Debug: find any consent between this doctor and patient regardless of status/expiry
-            debug = await db[COLLECTION].find_one({
-                "doctor_id": requester_id,
-                "patient_id": patient_id,
-            })
-            if debug:
-                debug.pop("_id", None)
-                logger.warning("consent_check_failed_debug", found_consent={
-                    "status": debug.get("status"),
-                    "valid_until": str(debug.get("valid_until")),
-                    "doctor_id": debug.get("doctor_id"),
-                    "patient_id": debug.get("patient_id"),
-                })
-            else:
-                logger.warning("consent_check_no_record_found", doctor_id=requester_id, patient_id=patient_id)
+            logger.warning("consent_check_no_active_found", doctor_id=requester_id, patient_id=patient_id)
             return ConsentCheckResult(
                 allowed=False, reason="No active consent found"
             )
@@ -121,16 +112,24 @@ class ConsentService:
         )
 
     async def get_patient_consents(self, patient_id: str, db) -> List[ConsentRecord]:
-        cursor = db[COLLECTION].find({"patient_id": patient_id})
+        results = await db.consents.find(
+            index_name="patient-index",
+            key_condition=Key("patient_id").eq(patient_id),
+        )
         records = []
-        async for doc in cursor:
-            doc.pop("_id", None)
-            records.append(ConsentRecord(**doc))
+        for doc in results:
+            try:
+                records.append(ConsentRecord(**doc))
+            except Exception:
+                pass
         return records
 
     async def revoke(self, consent_id: str, patient_id: str, db) -> bool:
-        result = await db[COLLECTION].update_one(
-            {"consent_id": consent_id, "patient_id": patient_id},
+        doc = await db.consents.find_one({"consent_id": consent_id})
+        if not doc or doc.get("patient_id") != patient_id:
+            return False
+        await db.consents.update_one(
+            {"consent_id": consent_id},
             {"$set": {"status": "revoked"}},
         )
-        return result.modified_count > 0
+        return True

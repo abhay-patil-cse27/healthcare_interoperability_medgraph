@@ -10,31 +10,29 @@ async def get_notifications(
     unread_only: bool = Query(False),
     limit: int = Query(30),
     db = Depends(get_db),
-    current_user = Depends(get_current_user)          # any authenticated user
+    current_user = Depends(get_current_user)
 ):
     uid        = current_user["user_id"]
     role       = current_user["role"]
-    hospital_id = current_user.get("hospital_id")
 
-    query: dict = {
-        "$or": [
-            {"for_user_id": uid},
-            {"for_roles":   role},
-        ]
-    }
-    if hospital_id:
-        # also include hospital-wide notifs
-        query["$or"].append({"hospital_id": hospital_id})
-    if unread_only:
-        query["read_by"] = {"$not": {"$elemMatch": {"$eq": uid}}}
+    # DynamoDB doesn't support $or — scan all and filter in-memory
+    try:
+        all_notifs = await db.notifications.find({}).to_list(200)
+    except Exception:
+        all_notifs = []
 
-    cursor = db.notifications.find(query).sort("created_at", -1).limit(limit)
+    # Filter: notifications for this user's role or directly for them
     results = []
-    async for doc in cursor:
-        doc.pop("_id", None)
-        doc["is_read"] = uid in (doc.get("read_by") or [])
-        results.append(doc)
-    return results
+    for doc in all_notifs:
+        if doc.get("for_user_id") == uid or role in (doc.get("for_roles") or []):
+            doc["is_read"] = uid in (doc.get("read_by") or [])
+            if unread_only and doc["is_read"]:
+                continue
+            results.append(doc)
+
+    # Sort by created_at descending
+    results.sort(key=lambda x: x.get("created_at") or "", reverse=True)
+    return results[:limit]
 
 @router.post("/{notification_id}/read")
 async def mark_read(
@@ -42,10 +40,16 @@ async def mark_read(
     db = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
-    await db.notifications.update_one(
-        {"notification_id": notification_id},
-        {"$addToSet": {"read_by": current_user["user_id"]}}
-    )
+    uid = current_user["user_id"]
+    doc = await db.notifications.find_one({"notification_id": notification_id})
+    if doc:
+        read_by = doc.get("read_by") or []
+        if uid not in read_by:
+            read_by.append(uid)
+            await db.notifications.update_one(
+                {"notification_id": notification_id},
+                {"$set": {"read_by": read_by}},
+            )
     return {"status": "ok"}
 
 @router.post("/mark-all-read")
@@ -55,10 +59,19 @@ async def mark_all_read(
 ):
     uid  = current_user["user_id"]
     role = current_user["role"]
-    await db.notifications.update_many(
-        {"$or": [{"for_user_id": uid}, {"for_roles": role}]},
-        {"$addToSet": {"read_by": uid}}
-    )
+    # DynamoDB doesn't have update_many — fetch and update individually
+    try:
+        results = await db.notifications.find({"for_roles": role}).to_list(200)
+        for doc in results:
+            read_by = doc.get("read_by") or []
+            if uid not in read_by:
+                read_by.append(uid)
+                await db.notifications.update_one(
+                    {"notification_id": doc["notification_id"]},
+                    {"$set": {"read_by": read_by}},
+                )
+    except Exception:
+        pass
     return {"status": "ok"}
 
 @router.get("/count")
@@ -68,9 +81,14 @@ async def unread_count(
 ):
     uid  = current_user["user_id"]
     role = current_user["role"]
-    query = {
-        "$or": [{"for_user_id": uid}, {"for_roles": role}],
-        "read_by": {"$not": {"$elemMatch": {"$eq": uid}}}
-    }
-    count = await db.notifications.count_documents(query)
+    try:
+        all_notifs = await db.notifications.find({}).to_list(500)
+    except Exception:
+        return {"unread": 0}
+
+    count = 0
+    for doc in all_notifs:
+        if doc.get("for_user_id") == uid or role in (doc.get("for_roles") or []):
+            if uid not in (doc.get("read_by") or []):
+                count += 1
     return {"unread": count}
