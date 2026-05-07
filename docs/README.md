@@ -1,101 +1,96 @@
-# MedGraph AI — Documentation Index
+# MedGraph AI — Documentation
 
-> National Healthcare Interoperability Platform  
-> Ministry of Health & Family Welfare · Tier-1 Platform  
-> Built for Cognizant Technoverse 2026
+> Healthcare Interoperability Platform | Team TLE_Eliminators | Cognizant Technoverse 2026
 
 ---
 
-## Documentation Structure
+## Quick Links
 
 | Document | Description |
 |----------|-------------|
-| [BACKEND.md](./BACKEND.md) | Backend architecture, services, pipelines, models, and configuration |
-| [FRONTEND.md](./FRONTEND.md) | Frontend architecture, pages, components, routing, and state management |
-| [API_REFERENCE.md](./API_REFERENCE.md) | Complete REST API reference with all endpoints, request/response schemas |
-| [RESPONSIBLE_AI.md](./RESPONSIBLE_AI.md) | Antigravity Agent — Responsible AI pipeline, PHI redaction, HITL workflow |
-| [INFRASTRUCTURE.md](./INFRASTRUCTURE.md) | Docker, databases, deployment, and AWS migration guide |
-| [RBAC.md](./RBAC.md) | Role-Based Access Control — 17 roles, permissions, and consent architecture |
+| [API Reference](./API_REFERENCE.md) | Complete REST API with all endpoints, request/response schemas |
+| [Backend](./BACKEND.md) | Backend architecture, services, pipelines, database schemas |
+| [Frontend](./FRONTEND.md) | React app structure, routing, state management, components |
+| [Infrastructure](./INFRASTRUCTURE.md) | AWS services, deployment, environment configuration |
+| [RBAC](./RBAC.md) | Role-Based Access Control — 17 roles, 50+ permissions |
+| [Responsible AI](./RESPONSIBLE_AI.md) | HIPAA compliance, PHI redaction, Bedrock Guardrails, HITL pipeline |
 
 ---
 
-## Quick Start
+## What is MedGraph AI?
 
-```bash
-# Clone and start all services
-git clone <repo-url>
-cd MED_GRAPH
-docker-compose up -d
+MedGraph AI is a HIPAA-compliant healthcare interoperability platform that uses AI to structure, store, and retrieve patient health records. It connects patients, doctors, nurses, pharmacists, and administrators through a consent-gated system.
 
-# Backend (FastAPI)
-cd backend
-pip install -r requirements.txt
-uvicorn app.main:app --reload --port 8000
+### Core Flows
 
-# Frontend (React + Vite)
-cd frontend
-npm install
-npm run dev
+**1. Patient Record Ingestion**
+```
+Patient submits health text / uploads PDF
+  → PHI redacted (HIPAA Safe Harbor)
+  → Bedrock Claude extracts clinical entities
+  → Entities stored in Neo4j knowledge graph
+  → Text embedded via Bedrock Titan (1024-dim)
+  → Embedding stored in OpenSearch Serverless
+```
+
+**2. Consent-Gated Clinical RAG**
+```
+Doctor submits clinical query
+  → Consent validated (DynamoDB)
+  → Parallel search: Neo4j graph + OpenSearch vectors
+  → Hybrid ranking (Graph 0.5 + Vector 0.3 + Recency 0.2)
+  → Bedrock Claude generates response with citations
+```
+
+**3. FHIR R4 Exchange**
+```
+Doctor requests patient bundle
+  → Consent validated
+  → Graph data + LLM summary
+  → FHIR R4 Bundle (Patient, Condition, MedicationStatement, DocumentReference)
+```
+
+**4. Responsible AI Screening**
+```
+Lab report uploaded → AI screening generated
+  → HITL validator reviews/edits
+  → Forwarded to doctor with time-bound consent
 ```
 
 ---
 
 ## Tech Stack
 
-| Layer | Technology | Purpose |
-|-------|-----------|---------|
-| Frontend | React 19, Vite 8, Tailwind CSS 3, Zustand, Recharts | SPA with role-based dashboards |
-| Backend | FastAPI, Python 3.11, LangGraph, Groq LLM | REST API + AI pipelines |
-| Vector DB | Qdrant | Semantic search over patient records |
-| Graph DB | Neo4j 5 | Entity relationships, clinical knowledge graph |
-| Document DB | MongoDB 7 | Users, sessions, audit logs, documents |
-| PDF Storage | MongoDB GridFS | Encrypted patient document storage |
-| Auth | JWT (python-jose), bcrypt | Stateless authentication |
-| Containerization | Docker Compose | Multi-service orchestration |
+| Layer | Technology |
+|-------|-----------|
+| Frontend | React 19, Vite, TailwindCSS, Zustand, React Router |
+| Backend | FastAPI, Python 3.11+, Uvicorn |
+| AI/ML | AWS Bedrock (Claude Sonnet + Titan Embeddings), LangGraph, LangChain |
+| Graph DB | Neo4j Aura (cloud) |
+| Vector DB | AWS OpenSearch Serverless |
+| Primary DB | AWS DynamoDB |
+| Storage | AWS S3 (encrypted PDFs) |
+| Auth | JWT (HS256) + bcrypt |
+| Standards | FHIR R4, HIPAA Safe Harbor, ABDM/ABHA |
 
 ---
 
-## Architecture Overview
+## Getting Started
 
-```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                         FRONTEND (React SPA)                             │
-│  Landing · Login · Patient Portal · Doctor Dashboard · Admin · HITL     │
-└────────────────────────────────────┬────────────────────────────────────┘
-                                     │ REST API (JWT Auth)
-┌────────────────────────────────────▼────────────────────────────────────┐
-│                         BACKEND (FastAPI)                                 │
-│  Routers → Services → Pipelines → LLM (Groq)                           │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐               │
-│  │ Auth     │  │ Chat     │  │ Screening│  │ Documents│               │
-│  │ Consent  │  │ Memory   │  │ HITL     │  │ FHIR     │               │
-│  │ Admin    │  │ Clinical │  │ PHI Redac│  │ Audit    │               │
-│  └──────────┘  └──────────┘  └──────────┘  └──────────┘               │
-└───────┬──────────────┬──────────────┬──────────────┬────────────────────┘
-        │              │              │              │
-   ┌────▼────┐   ┌────▼────┐   ┌────▼────┐   ┌────▼────┐
-   │ MongoDB │   │  Neo4j  │   │ Qdrant  │   │  Groq   │
-   │ (Docs)  │   │ (Graph) │   │(Vectors)│   │  (LLM)  │
-   └─────────┘   └─────────┘   └─────────┘   └─────────┘
+```bash
+# 1. Clone and configure
+cp .env.example .env
+# Fill in: AWS credentials, Neo4j Aura URI, JWT secret
+
+# 2. Backend
+cd backend
+pip install -r requirements.txt
+uvicorn app.main:app --reload --port 8000
+
+# 3. Frontend
+cd frontend
+npm install
+npm run dev
 ```
 
----
-
-## Key Features
-
-- **17-Role RBAC** with JWT-embedded permissions
-- **Consent-gated data access** — patients own their data
-- **AI Clinical RAG** — hybrid Neo4j + Qdrant retrieval with LLM synthesis
-- **Responsible AI (Antigravity Agent)** — HITL-validated, strictly word-bounded screening
-- **PHI Redaction** — HIPAA Safe Harbor de-identification before any LLM processing
-- **PDF Upload + FHIR** — patient document management with EHR interoperability
-- **Persistent Chat** — ChatGPT-style conversations with session management
-- **Real-time Visualizations** — interactive vitals charts, activity sparklines
-- **PM-JAY / MPJAY Integration** — government scheme eligibility and claims
-- **MLC Interface** — medico-legal case management with police access
-
----
-
-## License
-
-Proprietary — Cognizant Technoverse 2026 Submission
+See [Infrastructure](./INFRASTRUCTURE.md) for full environment setup.

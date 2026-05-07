@@ -1,172 +1,218 @@
-# Role-Based Access Control (RBAC)
-
-> 17 Roles · 50+ Permissions · JWT-Embedded · Consent-Gated
+# MedGraph AI — Role-Based Access Control (RBAC)
 
 ---
 
-## Roles
+## Overview
 
-| # | Role | Login Path | Description |
-|---|------|-----------|-------------|
-| 1 | `super_admin` | `/admin` | Full system control, hospital onboarding |
-| 2 | `govt_admin` | `/admin` | MoHFW oversight, national audit |
-| 3 | `hospital_admin` | `/hospital` | Staff management, departments (is a doctor/employee) |
-| 4 | `doctor` | `/doctor` | OPD/IPD physician, clinical RAG, prescriptions |
-| 5 | `surgeon` | `/doctor` | OT scheduling, surgical care |
-| 6 | `nurse` | `/nurse` | Ward bedside care, vitals logging |
-| 7 | `ward_incharge` | `/nurse` | Shift supervisor, ward management |
-| 8 | `ward_bot` | `/nurse` | IoT autonomous monitoring |
-| 9 | `pharmacist` | `/pharmacist` | Prescription dispensing, drug interactions |
-| 10 | `opd_staff` | `/opd` | Appointments, patient registration |
-| 11 | `ipd_staff` | `/ipd` | Admissions, bed management, discharge |
-| 12 | `receptionist` | `/opd` | Front desk, appointment booking |
-| 13 | `insurance_officer` | `/finance` | Claims, TPA, pre-authorization |
-| 14 | `scheme_officer` | `/scheme` | PM-JAY/MPJAY eligibility, disbursement |
-| 15 | `police_interface` | `/mlc` | MLC records (read-only, 72h TTL) |
-| 16 | `hitl_validator` | `/hitl` | AI screening validation, edit/forward/reject |
-| 17 | `patient` | `/patient` | Own records, consent, ABHA linking |
+MedGraph uses a **permission-based** access control system. Each user has a `role` that maps to a set of granular `permissions`. API endpoints check for specific permissions, not roles directly.
 
 ---
 
-## Permission Categories
+## Roles (17)
+
+| Role | Description | Default Route |
+|------|-------------|---------------|
+| `patient` | End user, manages own health records | `/patient` |
+| `doctor` | Clinician, queries patient records (consent-gated) | `/doctor` |
+| `surgeon` | Surgical specialist, same as doctor + OT access | `/doctor` |
+| `nurse` | Ward nurse, logs vitals and notes | `/nurse` |
+| `ward_incharge` | Senior nurse, manages ward operations | `/nurse` |
+| `ward_bot` | IoT service account for automated vitals | `/nurse` |
+| `pharmacist` | Dispenses prescriptions | `/pharmacist` |
+| `opd_staff` | Manages outpatient appointments | `/opd` |
+| `receptionist` | Front desk, books appointments | `/opd` |
+| `ipd_staff` | Manages inpatient admissions/discharge | `/ipd` |
+| `insurance_officer` | Creates and manages insurance claims | `/finance` |
+| `scheme_officer` | Govt scheme eligibility and disbursals | `/scheme` |
+| `police_interface` | Read-only MLC access | `/mlc` |
+| `hitl_validator` | Reviews AI-generated screenings | `/hitl` |
+| `hospital_admin` | Manages hospital departments and staff | `/hospital` |
+| `govt_admin` | Government-level oversight | `/admin` |
+| `super_admin` | Full system access | `/admin` |
+
+---
+
+## Permissions (50+)
 
 ### System & Admin
-| Permission | Roles |
-|-----------|-------|
-| `system:manage` | super_admin |
-| `hospital:create` | super_admin |
-| `hospital:manage` | super_admin, hospital_admin |
-| `hospital:network_registry` | super_admin |
-| `govt:audit_read` | govt_admin, hospital_admin |
-| `user:create_staff` | super_admin, hospital_admin |
-| `user:read_all` | super_admin, hospital_admin |
-| `audit:read_global` | super_admin |
-| `audit:read_hospital` | hospital_admin, doctor, surgeon, hitl_validator |
+
+| Permission | Description |
+|------------|-------------|
+| `system:manage` | Full system control |
+| `hospital:create` | Create new hospitals |
+| `hospital:manage` | Manage departments, settings |
+| `hospital:network_registry` | Network-level hospital registry |
+| `govt:audit_read` | Government audit access |
+| `user:create_staff` | Create staff accounts |
+| `user:read_all` | View all users |
+| `audit:read_global` | Global audit logs |
+| `audit:read_hospital` | Hospital-scoped audit logs |
 
 ### Patient Data & Consent
-| Permission | Roles |
-|-----------|-------|
-| `patient:read_own` | patient |
-| `patient:read_consented` | doctor, surgeon |
-| `patient:read_assigned` | doctor, surgeon, nurse, ward_incharge, ipd_staff, hitl_validator |
-| `patient:register` | hospital_admin, opd_staff |
-| `patient:write_own` | patient |
-| `consent:request` | doctor, surgeon |
-| `consent:grant` | patient |
-| `consent:view_own` | patient, hitl_validator |
-| `memory:ingest` | doctor, surgeon, patient |
 
-### HITL / Screening
-| Permission | Roles |
-|-----------|-------|
-| `screening:validate` | hitl_validator |
-| `screening:edit` | hitl_validator |
-| `screening:forward` | hitl_validator |
-| `screening:escalate` | hitl_validator |
-| `screening:view_pending` | hitl_validator |
+| Permission | Description |
+|------------|-------------|
+| `patient:read_own` | Read own health data |
+| `patient:read_consented` | Read consented patient data |
+| `patient:read_assigned` | Read assigned patients |
+| `patient:register` | Register new patients |
+| `patient:write_own` | Write own health data |
+| `consent:request` | Request patient consent |
+| `consent:grant` | Grant/revoke consent |
+| `consent:view_own` | View own consents |
+| `memory:ingest` | Ingest health records |
+
+### HITL / Responsible AI
+
+| Permission | Description |
+|------------|-------------|
+| `screening:validate` | Validate AI screenings |
+| `screening:edit` | Edit AI summaries |
+| `screening:forward` | Forward to doctor |
+| `screening:escalate` | Escalate issues |
+| `screening:view_pending` | View pending queue |
 
 ### Clinical
-| Permission | Roles |
-|-----------|-------|
-| `vitals:read` | doctor, surgeon, nurse, ward_incharge, hitl_validator |
-| `vitals:write` | doctor, surgeon, nurse, ward_incharge |
-| `prescription:write` | doctor, surgeon |
-| `prescription:read` | doctor, surgeon, nurse, ward_incharge, pharmacist |
-| `prescription:dispense` | pharmacist |
-| `drug_interaction:check` | doctor, surgeon, nurse, ward_incharge, pharmacist |
-| `chat:query` | doctor, surgeon |
+
+| Permission | Description |
+|------------|-------------|
+| `vitals:read` | Read patient vitals |
+| `vitals:write` | Log vitals |
+| `prescription:write` | Write prescriptions |
+| `prescription:read` | Read prescriptions |
+| `prescription:dispense` | Dispense medications |
+| `drug_interaction:check` | Check drug interactions |
+| `chat:query` | Clinical RAG queries |
 
 ### FHIR & Interoperability
-| Permission | Roles |
-|-----------|-------|
-| `fhir:export` | doctor, surgeon |
-| `fhir:read` | doctor, surgeon, patient |
-| `abha:link` | doctor, surgeon, opd_staff, ipd_staff, patient |
-| `abha:push_record` | doctor, surgeon |
+
+| Permission | Description |
+|------------|-------------|
+| `fhir:export` | Export FHIR bundles |
+| `fhir:read` | Read FHIR resources |
+| `abha:link` | Link ABHA ID |
+| `abha:push_record` | Push to ABDM |
 
 ### Operations
-| Permission | Roles |
-|-----------|-------|
-| `admission:create` | doctor, surgeon, ipd_staff |
-| `admission:discharge` | doctor, surgeon, ipd_staff |
-| `bed:manage` | ipd_staff |
-| `ward:manage` | ward_incharge |
-| `appointment:create` | doctor, surgeon, opd_staff, receptionist |
-| `appointment:read` | doctor, surgeon, nurse, ward_incharge, opd_staff, receptionist, patient |
-| `ot:schedule` | surgeon |
-| `ot:record_intraop` | surgeon |
+
+| Permission | Description |
+|------------|-------------|
+| `admission:create` | Create IPD admissions |
+| `admission:discharge` | Discharge patients |
+| `bed:manage` | Manage beds/wards |
+| `ward:manage` | Ward operations |
+| `appointment:create` | Book OPD appointments |
+| `appointment:read` | View appointments |
+| `ot:schedule` | Schedule OT |
+| `ot:record_intraop` | Record intra-op notes |
 
 ### MLC & Legal
-| Permission | Roles |
-|-----------|-------|
-| `mlc:create` | doctor, surgeon |
-| `mlc:read` | doctor, surgeon, nurse, ward_incharge, police_interface |
-| `mlc:police_share` | doctor, surgeon |
 
-### Insurance & Schemes
-| Permission | Roles |
-|-----------|-------|
-| `insurance:claim_create` | insurance_officer |
-| `insurance:claim_read` | insurance_officer, doctor, surgeon |
-| `insurance:preauth` | insurance_officer |
-| `scheme:eligibility_check` | scheme_officer, doctor, surgeon |
-| `scheme:disburse` | scheme_officer |
+| Permission | Description |
+|------------|-------------|
+| `mlc:create` | Create MLC records |
+| `mlc:read` | Read MLC records |
+| `mlc:police_share` | Share with police |
 
----
+### Finance
 
-## Consent Architecture
+| Permission | Description |
+|------------|-------------|
+| `insurance:claim_create` | Create insurance claims |
+| `insurance:claim_read` | Read claims |
+| `insurance:preauth` | Pre-authorization |
+| `scheme:eligibility_check` | Check scheme eligibility |
+| `scheme:disburse` | Disburse funds |
 
-### Consent Scopes
-| Scope | Description |
-|-------|-------------|
-| `full` | Complete access to all patient data |
-| `disease_specific` | Only records matching specified diseases |
-| `time_bound` | Only records within a date range |
-| `medication_only` | Only medication-related records |
+### Ward Bot
 
-### Consent Lifecycle
-```
-Doctor requests → Patient receives notification → Patient approves/denies
-                                                        ↓
-                                              Consent active (time-limited)
-                                                        ↓
-                                              Auto-expires after duration_hours
-```
-
-### Self-Access Rule
-Patients ALWAYS have full access to their own data — no consent needed.
-
-### HITL Screening Consent
-Separate from patient→doctor consent. When HITL forwards a screening:
-- Creates a `doctor_screening_consent` record
-- Time-bound (1–168 hours, configurable)
-- Doctor can ONLY view the screening while consent is active
-- Auto-expires, access revoked
+| Permission | Description |
+|------------|-------------|
+| `ward_bot:write_vitals` | IoT vitals ingestion |
+| `ward_bot:send_alert` | Send escalation alerts |
 
 ---
 
-## JWT Token Structure
+## Role → Permission Mapping
 
-```json
-{
-  "sub": "user_id (UUID)",
-  "role": "doctor",
-  "permissions": ["patient:read_consented", "chat:query", ...],
-  "hospital_id": "hosp-aiims-delhi-001",
-  "exp": 1717200000,
-  "iat": 1717196400
-}
+### Patient
+```
+patient:read_own, patient:write_own, consent:grant, consent:view_own, memory:ingest
+```
+
+### Doctor
+```
+patient:read_consented, patient:read_assigned, consent:request, chat:query,
+fhir:export, fhir:read, prescription:write, prescription:read,
+drug_interaction:check, vitals:read, mlc:create, mlc:read,
+admission:create, appointment:read
+```
+
+### Nurse
+```
+patient:read_assigned, vitals:read, vitals:write, prescription:read,
+admission:create, bed:manage
+```
+
+### Pharmacist
+```
+prescription:read, prescription:dispense, drug_interaction:check
+```
+
+### Hospital Admin
+```
+hospital:manage, user:create_staff, audit:read_hospital,
+patient:register, appointment:read, bed:manage, ward:manage
+```
+
+### Super Admin
+```
+system:manage, hospital:create, hospital:manage, user:create_staff,
+user:read_all, audit:read_global, patient:register
+```
+
+### HITL Validator
+```
+screening:validate, screening:edit, screening:forward,
+screening:escalate, screening:view_pending
 ```
 
 ---
 
-## User Onboarding
+## How It Works
 
-| User Type | How They're Created |
-|-----------|-------------------|
-| Patient | Self-registration via `/auth/register` |
-| Hospital Admin | Super Admin assigns via `/admin/users` |
-| All other staff | Hospital Admin invites via `/hospital/staff` |
-| HITL Validator | Super Admin creates via `/admin/users` |
+### Endpoint Protection
 
-**Staff can NEVER self-register.** Only patients can self-register.
+```python
+# Single permission required
+@router.post("/ingest")
+async def ingest(current_user=Depends(require_permission("memory:ingest"))):
+    ...
+
+# Any of multiple permissions
+@router.post("/upload")
+async def upload(current_user=Depends(require_any_permission(["patient:write_own", "memory:ingest"]))):
+    ...
+```
+
+### Permission Resolution
+
+1. Check JWT token `permissions[]` claim (zero-latency)
+2. Fallback to DynamoDB user record permissions (for newly granted perms)
+3. If neither contains the required permission → 403
+
+### Consent Layer
+
+Permissions alone don't grant access to patient data. Doctors also need:
+- An **active, approved consent** from the patient
+- Consent must not be expired or revoked
+- Consent scope determines what data is accessible
+
+---
+
+## Staff Account Creation
+
+- **Patients** self-register via `POST /auth/register`
+- **Staff** are created by Hospital Admins via `POST /hospital/staff`
+- **System users** are created by Super Admins via `POST /admin/users`
+- Staff cannot self-register (403 if attempted)

@@ -1,151 +1,202 @@
-# Responsible AI — Antigravity Agent
-
-> Consent-gated · HITL-validated · Strictly word-bounded · HIPAA compliant
+# MedGraph AI — Responsible AI & Compliance
 
 ---
 
-## Architecture
+## Overview
 
-```
-┌─────────┐     ┌──────────────┐     ┌──────────────┐     ┌───────────────┐     ┌────────┐
-│ Patient │────▶│ PDF Upload   │────▶│ Consent      │────▶│ AI Screening  │────▶│  HITL  │
-│         │     │ + PHI Redact │     │ Engine       │     │ (Word-Bounded)│     │Validator│
-└─────────┘     └──────────────┘     └──────────────┘     └───────────────┘     └────┬───┘
-                       │                                                              │
-                       ▼                                                    ┌─────────┴─────────┐
-                ┌──────────────┐                                            │                   │
-                │ Vector DB    │◀── PHI-redacted chunks                EDIT & Forward    ACCEPT & Forward
-                │ (Qdrant)     │    with priority tags                      │                   │
-                └──────────────┘                                            ▼                   ▼
-                       │                                            ┌───────────────────────────────┐
-                       ▼                                            │  Time-Bound Consent Created   │
-                ┌──────────────┐                                    │  for Target Doctor             │
-                │ Graph DB     │                                    └───────────────┬───────────────┘
-                │ (Neo4j)      │                                                    │
-                └──────────────┘                                                    ▼
-                                                                            ┌───────────────┐
-                                                                            │    Doctor     │
-                                                                            │ (Time-Bound)  │
-                                                                            └───────────────┘
-```
+MedGraph implements multiple layers of AI safety and healthcare compliance:
 
----
-
-## Four-Eye Model
-
-Every AI-generated clinical output passes through:
-1. **AI Agent** (Antigravity) — generates grounded, word-bounded summary
-2. **HITL Operator** — verifies patient identity and output accuracy
-3. **Doctor** — reviews and acts on verified summary
-
-**No AI output reaches a doctor without HITL verification.**
-
----
-
-## Pipeline Stages
-
-| Stage | Value | Description |
-|-------|-------|-------------|
-| 1 | `ai_generated` | AI has produced summary, sitting in HITL queue |
-| 2 | `hitl_in_review` | HITL operator is actively reviewing |
-| 3a | `hitl_edited` | HITL edited and forwarded (creates time-bound consent) |
-| 3b | `hitl_accepted` | HITL accepted as-is and forwarded |
-| 3c | `hitl_rejected` | HITL rejected — needs re-processing |
-| 3d | `hitl_escalated` | Escalated to admin |
-| 4 | `doctor_consent_active` | Doctor has active time-bound access |
-| 5 | `doctor_reviewed` | Doctor has reviewed (pipeline complete) |
-| 6 | `consent_expired` | Doctor's time-bound access expired |
-
----
-
-## Strictly Word-Bounded LLM Output
-
-The system prompt enforces:
-
-1. **Output contains ONLY words from the source document**
-2. **High-priority sections reproduced VERBATIM** (Interpretation, Note, Remark, Summary, Conclusion, Pathologist Remark)
-3. **Numerical values reproduced EXACTLY** — no rounding, no paraphrasing
-4. **No clinical knowledge injection** — LLM cannot add information not in source
-5. **Non-diagnostic language only** — "may indicate", "consistent with", "warrants review"
-6. **Missing data → "Data not available"** — never inferred
-
----
-
-## Section Priority System
-
-| Priority | Sections | Treatment |
-|----------|----------|-----------|
-| HIGH | Interpretation, Note, Remark, Summary, Conclusion, Impression, Pathologist Remark, Medical Remarks, Suggested Interpretation | Reproduced VERBATIM. Never split during chunking. |
-| MEDIUM | Lab values, observed measurements, reference ranges | Values reproduced exactly. Abnormalities flagged. |
-| LOW | Demographics, methodology, disclaimers | Included for context. Can be summarised. |
+1. **PHI Redaction** — HIPAA Safe Harbor before any LLM processing
+2. **Bedrock Guardrails** — Input/output content filtering
+3. **HITL Validation** — Human review of AI-generated content
+4. **Consent-Gated Access** — Patient controls who sees their data
+5. **Audit Trail** — Every PHI access logged
 
 ---
 
 ## PHI Redaction (HIPAA Safe Harbor)
 
-Applied BEFORE any LLM processing:
+All patient text is de-identified **before** reaching the LLM or vector database.
 
-| PII Type | Placeholder | Example |
-|----------|-------------|---------|
-| Patient name | `[PATIENT]` | AMOL G PATIL → [PATIENT] |
-| Date of birth | `[DOB_REDACTED]` | 15/03/1978 → [DOB_REDACTED] |
-| Phone | `[PHONE_REDACTED]` | +919922307401 → [PHONE_REDACTED] |
-| Address | `[ADDRESS_REDACTED]` | GRUYOG APAT FLAT... → [ADDRESS_REDACTED] |
-| Pin code | `[PINCODE_REDACTED]` | 416006 → [PINCODE_REDACTED] |
-| Lab IDs | `[LAB_ID_REDACTED]` | VID/PID numbers → [LAB_ID_REDACTED] |
-| Doctor name | `[DOCTOR_REDACTED]` | RAJENDRA PATIL → [DOCTOR_REDACTED] |
-| Reg number | `[REG_REDACTED]` | 60811 → [REG_REDACTED] |
-| Lab/Hospital | `[LAB_REDACTED]` | Metropolis Healthcare → [LAB_REDACTED] |
-| Email | `[EMAIL_REDACTED]` | — |
-| URLs | `[URL_REDACTED]` | — |
-| IP addresses | `[IP_REDACTED]` | — |
+### What Gets Redacted (18 HIPAA Identifiers)
 
-**Preserved**: Age (years), gender, all clinical values, reference ranges, medical terminology.
+| # | Identifier | Example | Replacement |
+|---|-----------|---------|-------------|
+| 1 | Names | "Ravi Patil" | `[REDACTED_NAME]` |
+| 2 | Geographic data | "Pune, 411001" | `[REDACTED_ADDRESS]` |
+| 3 | Dates (except year) | "15-May-1990" | `[REDACTED_DATE]` |
+| 4 | Phone numbers | "+919876543210" | `[REDACTED_PHONE]` |
+| 5 | Email addresses | "ravi@email.com" | `[REDACTED_EMAIL]` |
+| 6 | SSN / Aadhaar | "1234-5678-9012" | `[REDACTED_ID]` |
+| 7 | Medical record numbers | "AIIMS-2026-00042" | `[REDACTED_MRN]` |
+| 8 | Health plan IDs | "ABHA-1234" | `[REDACTED_HEALTH_ID]` |
+| 9 | Account numbers | — | `[REDACTED_ACCOUNT]` |
+| 10 | License numbers | — | `[REDACTED_LICENSE]` |
+| 11-18 | Vehicle, device, URLs, IPs, biometric, photos | — | `[REDACTED_*]` |
+
+### What Gets Preserved
+
+- Age, gender
+- Clinical values (BP: 140/90, SpO2: 98%)
+- Lab results (HbA1c: 7.2%)
+- Medical terminology
+- Drug names and dosages
+- Symptoms and conditions
+
+### Reversible Redaction
+
+- Redaction maps stored in `medgraph-phi-redaction-maps` table
+- Only HITL validators can access redaction maps for re-association
+- Maps are never exposed to the LLM or vector database
 
 ---
 
-## Deterministic Abnormality Detection
+## Bedrock Guardrails
 
-30+ lab parameters with regex-based extraction and classification:
+Applied to both clinical RAG and Vaidya chatbot responses.
 
+### Configuration
+
+| Filter | Action |
+|--------|--------|
+| **Denied Topics** | Block: medical diagnosis, unauthorized PHI access |
+| **Content Filters** | Block: hate speech, violence, sexual content, insults |
+| **Sensitive Info** | Detect & block: PII/PHI in output |
+| **Contextual Grounding** | Block: hallucinated content (threshold 0.7) |
+
+### Behavior
+
+When a guardrail intervenes:
+1. Response `guardrail_action` = `"BLOCKED"`
+2. Safe replacement message returned to user
+3. Event logged with user ID, role, IP, query preview
+4. Original blocked content never reaches the client
+
+### Setup
+
+```bash
+python backend/scripts/setup_bedrock_guardrails.py
 ```
-NORMAL:   within reference range
-HIGH:     above upper limit
-LOW:      below lower limit
-CRITICAL: >2x deviation from range boundary
-```
 
-Parameters covered: Glucose, HbA1c, Bilirubin (total/direct/indirect), Proteins, SGPT/ALT, SGOT/AST, Creatinine, BUN, Uric Acid, Cholesterol, Triglycerides, HDL, LDL, VLDL, Sodium, Potassium, Chloride, Haemoglobin, RBC, PCV, WBC, Platelets, Eosinophils, Basophils, ESR, TSH, FT3, FT4, Vitamin B12, Vitamin D, Phosphorus, Calcium.
+This creates the guardrail and outputs the `BEDROCK_GUARDRAIL_ID` for your `.env`.
 
 ---
 
-## HITL Validator Role
+## HITL (Human-in-the-Loop) Validation
 
-| Permission | Description |
-|-----------|-------------|
-| `screening:validate` | View and validate AI screenings |
+AI-generated screening summaries are **never** sent directly to doctors. They pass through a human validator first.
+
+### Workflow
+
+```
+1. Lab report uploaded → AI generates screening summary
+2. Summary enters HITL queue (status: "pending_hitl")
+3. HITL validator reviews:
+   a. ACCEPT & FORWARD → Summary sent to doctor with time-bound consent
+   b. EDIT & FORWARD → Validator corrects errors, then forwards
+   c. REJECT → Data mismatch, nothing forwarded
+   d. ESCALATE → Identity/record issues flagged to admin
+4. Doctor receives forwarded screening with temporary access (1-8 hours)
+5. Doctor marks as reviewed
+```
+
+### HITL Permissions
+
+| Permission | Action |
+|------------|--------|
+| `screening:view_pending` | View the queue |
+| `screening:validate` | Review individual screenings |
 | `screening:edit` | Edit AI summary before forwarding |
-| `screening:forward` | Forward to doctor with time-bound consent |
-| `screening:escalate` | Escalate to admin |
-| `screening:view_pending` | View the HITL queue |
+| `screening:forward` | Accept and forward to doctor |
+| `screening:escalate` | Flag issues to admin |
 
 ---
 
-## Escalation Triggers
+## Consent-Gated Access
 
-Escalate to admin when:
-- Patient identity cannot be confirmed
-- Record history is inconsistent across sources
-- HITL operator is unavailable for critical findings
-- Critical abnormalities detected (>2x reference range deviation)
+### How Consent Works
+
+1. **Doctor requests** consent for a specific patient with a stated purpose
+2. **Patient receives** notification and reviews the request
+3. **Patient grants or denies** — can specify scope restrictions
+4. **If granted:** Doctor gets time-limited access (1-8760 hours)
+5. **Patient can revoke** at any time — immediate effect
+
+### Consent Scopes
+
+| Scope | Access Level |
+|-------|-------------|
+| `full` | All patient records |
+| `medication_only` | Only medication-related data |
+| `disease_specific` | Only records matching specified conditions |
+| `time_bound` | Only records within a date range |
+
+### Enforcement Points
+
+- `POST /chat/` — Consent checked before RAG query
+- `POST /fhir/exchange` — Consent checked before bundle generation
+- `GET /screening/doctor/{id}` — Consent checked before viewing
 
 ---
 
-## Compliance
+## Audit Trail
 
-- **HIPAA**: Safe Harbor de-identification, minimum necessary rule, audit trail
-- **FHIR R4**: DocumentReference for every uploaded document (LOINC 11502-2)
-- **DPDP Act 2023**: Patient data sovereignty, consent-gated access
-- **Non-maleficence**: Uncertain values flagged for human review, never inferred
-- **Transparency**: All AI outputs labelled "(AI-generated — not a diagnosis)"
-- **Accountability**: Every summary linked to verifiable source document
+Every PHI access is logged to `medgraph-audit-logs`:
+
+```json
+{
+  "log_id": "uuid",
+  "action": "CHAT_QUERY",
+  "patient_id": "patient-uuid",
+  "accessor_id": "doctor-uuid",
+  "accessor_role": "doctor",
+  "resource_type": "ClinicalChat",
+  "request_id": "uuid",
+  "metadata": {
+    "consent_id": "uuid",
+    "consent_scope": "full",
+    "query_preview": "What medications..."
+  },
+  "timestamp": "2026-05-07T10:30:00Z"
+}
+```
+
+### Audited Actions
+
+| Action | Trigger |
+|--------|---------|
+| `INGEST` | Patient health text ingested |
+| `CHAT_QUERY` | Doctor queries patient records |
+| `FHIR_EXCHANGE` | FHIR bundle generated |
+| `CONSENT_REQUESTED` | Doctor requests consent |
+| `CONSENT_GRANTED` | Patient approves |
+| `CONSENT_DENIED` | Patient denies |
+| `CONSENT_REVOKED` | Patient revokes |
+| `DOCUMENT_UPLOADED` | PDF uploaded |
+| `DOCUMENT_DOWNLOADED` | PDF accessed |
+| `SCREENING_GENERATED` | AI screening created |
+| `SCREENING_FORWARDED` | HITL forwards to doctor |
+
+---
+
+## Compliance Standards
+
+| Standard | Implementation |
+|----------|---------------|
+| **HIPAA** | PHI redaction, encrypted storage, audit logs, access controls |
+| **FHIR R4** | Standardized health data exchange bundles |
+| **ABDM/ABHA** | India's Ayushman Bharat Digital Health Mission integration |
+| **DPDP Act** | India's Digital Personal Data Protection compliance |
+
+---
+
+## Security Measures
+
+| Layer | Protection |
+|-------|-----------|
+| Transport | HTTPS/TLS everywhere |
+| Storage | S3 AES256, DynamoDB encryption at rest, Neo4j TLS |
+| Auth | JWT with 60-min expiry, bcrypt password hashing |
+| Input | PDF magic byte validation, file size limits, input sanitization |
+| Output | Guardrail filtering, no raw PHI in responses |
+| Access | Permission-based RBAC + consent-gated data access |

@@ -1,206 +1,217 @@
-# Infrastructure & Deployment
-
-> Docker Compose · MongoDB · Neo4j · Qdrant · AWS Migration Guide
+# MedGraph AI — Infrastructure & Deployment
 
 ---
 
-## Local Development (Docker Compose)
+## AWS Services
 
-```yaml
-services:
-  mongodb:    # MongoDB 7.0 — Document store, auth, sessions, audit
-  neo4j:      # Neo4j 5.18 — Clinical knowledge graph
-  qdrant:     # Qdrant latest — Vector search (patient memories)
-  backend:    # FastAPI (Python 3.11)
-  frontend:   # React SPA (Nginx)
-```
-
-### Quick Start
-```bash
-# Start all services
-docker-compose up -d
-
-# Verify health
-curl http://localhost:8000/health
-
-# Seed initial data
-cd backend
-python scripts/seed_super_admin.py
-python scripts/seed_test_users.py
-python scripts/seed_all_entities.py
-```
-
-### Ports
-| Service | Port | Purpose |
-|---------|------|---------|
-| Frontend | 80 | React SPA (Nginx) |
-| Backend | 8000 | FastAPI REST API |
-| MongoDB | 27017 | Document database |
-| Neo4j Browser | 7474 | Graph DB web UI |
-| Neo4j Bolt | 7687 | Graph DB protocol |
-| Qdrant | 6333 | Vector DB REST API |
+| Service | Resource | Purpose |
+|---------|----------|---------|
+| **Bedrock** | Claude Sonnet 4.6 | Clinical RAG, entity extraction, summarization |
+| **Bedrock** | Claude 3.7 Sonnet | Vaidya platform guide bot |
+| **Bedrock** | Titan Text Embeddings v2 | 1024-dim vector embeddings |
+| **Bedrock** | Guardrails | HIPAA content filtering, PHI leakage prevention |
+| **DynamoDB** | 9 tables (medgraph-*) | Primary database for all structured data |
+| **OpenSearch Serverless** | medgraph-vectors collection | Vector search (cosine similarity) |
+| **S3** | medgraph-patient-documents bucket | Encrypted PDF storage (AES256) |
+| **IAM** | SigV4 signing | Authentication for all AWS API calls |
 
 ---
 
-## Environment Variables
+## Environment Configuration
 
-Create `.env` at project root:
+### Root `.env` (Backend)
 
 ```env
-# Required
-GROQ_API_KEY=gsk_xxxxxxxxxxxxx
-JWT_SECRET_KEY=your-256-bit-secret
+# AWS
+AWS_REGION=us-east-1
 
-# Optional (defaults shown)
-GROQ_MODEL=llama-3.3-70b-versatile
-MONGODB_URL=mongodb://localhost:27017
-MONGODB_DB=medgraph
-NEO4J_URI=bolt://localhost:7687
+# Bedrock LLM
+BEDROCK_MODEL_ID=us.anthropic.claude-sonnet-4-6
+VAIDYA_MODEL_ID=us.anthropic.claude-3-7-sonnet-20250219-v1:0
+BEDROCK_EMBEDDING_MODEL_ID=amazon.titan-embed-text-v2:0
+EMBEDDING_DIM=1024
+
+# Bedrock Guardrails
+BEDROCK_GUARDRAIL_ID=<your-guardrail-id>
+BEDROCK_GUARDRAIL_VERSION=DRAFT
+
+# DynamoDB
+DYNAMODB_TABLE_PREFIX=medgraph
+
+# OpenSearch Serverless
+OPENSEARCH_ENDPOINT=<your-aoss-endpoint>.us-east-1.aoss.amazonaws.com
+OPENSEARCH_INDEX=patient-memories
+
+# S3
+S3_DOCUMENTS_BUCKET=medgraph-patient-documents-<account-id>
+
+# Neo4j Aura
+NEO4J_URI=neo4j+s://<your-aura-instance>.databases.neo4j.io
 NEO4J_USER=neo4j
-NEO4J_PASSWORD=medgraph123
-QDRANT_HOST=localhost
-QDRANT_PORT=6333
-QDRANT_COLLECTION=patient_memories
-EMBEDDING_MODEL=sentence-transformers/all-MiniLM-L6-v2
-EMBEDDING_DIM=384
+NEO4J_PASSWORD=<password>
+NEO4J_DATABASE=neo4j
+
+# JWT
+JWT_SECRET_KEY=<strong-random-secret>
 JWT_ALGORITHM=HS256
 JWT_ACCESS_TOKEN_EXPIRE_MINUTES=60
+
+# App
 APP_ENV=development
 LOG_LEVEL=INFO
+
+# Hybrid Search Weights
 GRAPH_WEIGHT=0.5
 VECTOR_WEIGHT=0.3
 RECENCY_WEIGHT=0.2
 TOP_K=10
 ```
 
-Frontend `.env`:
+### Frontend `.env`
+
 ```env
 VITE_API_URL=http://localhost:8000
 ```
 
 ---
 
-## AWS Migration Guide
+## Prerequisites
 
-### Recommended Architecture
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                        AWS Cloud                                  │
-│                                                                   │
-│  ┌──────────────┐     ┌──────────────┐     ┌──────────────┐    │
-│  │ CloudFront   │────▶│ S3 (Static)  │     │ Route 53     │    │
-│  │ (CDN)        │     │ React Build  │     │ (DNS)        │    │
-│  └──────────────┘     └──────────────┘     └──────────────┘    │
-│         │                                                        │
-│         ▼                                                        │
-│  ┌──────────────┐     ┌──────────────┐                          │
-│  │ ALB          │────▶│ ECS Fargate  │                          │
-│  │ (Load Bal.)  │     │ (Backend)    │                          │
-│  └──────────────┘     └──────┬───────┘                          │
-│                              │                                   │
-│         ┌────────────────────┼────────────────────┐             │
-│         ▼                    ▼                    ▼              │
-│  ┌──────────────┐   ┌──────────────┐   ┌──────────────┐       │
-│  │ DocumentDB   │   │ Neptune      │   │ OpenSearch   │       │
-│  │ (MongoDB)    │   │ (Neo4j alt)  │   │ (Vector alt) │       │
-│  └──────────────┘   └──────────────┘   └──────────────┘       │
-│                                                                   │
-│  ┌──────────────┐   ┌──────────────┐   ┌──────────────┐       │
-│  │ Secrets Mgr  │   │ CloudWatch   │   │ WAF          │       │
-│  │ (Env vars)   │   │ (Logging)    │   │ (Security)   │       │
-│  └──────────────┘   └──────────────┘   └──────────────┘       │
-└─────────────────────────────────────────────────────────────────┘
-```
-
-### Service Mapping
-
-| Local Service | AWS Service | Notes |
-|--------------|-------------|-------|
-| MongoDB | Amazon DocumentDB | MongoDB-compatible, managed |
-| Neo4j | Amazon Neptune | Graph DB (or self-hosted Neo4j on EC2) |
-| Qdrant | Amazon OpenSearch Serverless (k-NN) | Or self-hosted Qdrant on ECS |
-| FastAPI Backend | ECS Fargate | Containerized, auto-scaling |
-| React Frontend | S3 + CloudFront | Static hosting with CDN |
-| PDF Storage (GridFS) | S3 + DocumentDB metadata | S3 for blobs, DocumentDB for metadata |
-| Groq LLM | Groq Cloud API | External API call (no AWS equivalent needed) |
-| JWT Secrets | AWS Secrets Manager | Rotate secrets automatically |
-| Logs | CloudWatch Logs | Structured logging |
-| DNS | Route 53 | Custom domain |
-| SSL | ACM (Certificate Manager) | Free SSL certificates |
-| Firewall | WAF + Security Groups | DDoS protection, IP filtering |
-
-### Migration Steps
-
-1. **Frontend**: `npm run build` → upload `dist/` to S3 → CloudFront distribution
-2. **Backend**: Build Docker image → push to ECR → deploy on ECS Fargate
-3. **MongoDB → DocumentDB**: Use `mongodump`/`mongorestore` for data migration
-4. **Neo4j → Neptune**: Export Cypher → convert to Gremlin (or run Neo4j on EC2)
-5. **Qdrant**: Run as ECS service with EBS volume, or use OpenSearch k-NN
-6. **Environment**: Store all secrets in AWS Secrets Manager
-7. **Networking**: VPC with private subnets for databases, public subnet for ALB
-
-### Cost Estimate (Production)
-
-| Service | Estimated Monthly Cost |
-|---------|----------------------|
-| ECS Fargate (2 tasks, 1vCPU/2GB) | ~$70 |
-| DocumentDB (db.t3.medium) | ~$120 |
-| Neptune (db.t3.medium) | ~$150 |
-| OpenSearch Serverless | ~$50 |
-| S3 + CloudFront | ~$10 |
-| ALB | ~$25 |
-| Secrets Manager | ~$5 |
-| CloudWatch | ~$20 |
-| **Total** | **~$450/month** |
-
-### Security Checklist for AWS
-
-- [ ] VPC with private subnets for all databases
-- [ ] Security groups: backend → databases only
-- [ ] WAF rules on ALB (rate limiting, SQL injection protection)
-- [ ] Encryption at rest (DocumentDB, Neptune, S3)
-- [ ] Encryption in transit (TLS everywhere)
-- [ ] IAM roles for ECS tasks (no hardcoded credentials)
-- [ ] Secrets Manager for all sensitive config
-- [ ] CloudTrail for API audit logging
-- [ ] GuardDuty for threat detection
-- [ ] Backup: DocumentDB automated snapshots, S3 versioning
+| Requirement | Purpose |
+|-------------|---------|
+| AWS CLI configured | boto3 uses CLI credentials (SigV4) |
+| Python 3.11+ | Backend runtime |
+| Node.js 18+ | Frontend build |
+| Neo4j Aura account | Graph database (free tier available) |
 
 ---
 
-## Docker Build
+## DynamoDB Tables
 
-### Backend
-```dockerfile
-FROM python:3.11-slim
-WORKDIR /app
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
-COPY app/ ./app/
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+Create all tables with the `medgraph-` prefix:
+
+| Table | Partition Key | Purpose |
+|-------|--------------|---------|
+| medgraph-users | user_id (S) | User accounts |
+| medgraph-consents | consent_id (S) | Consent records |
+| medgraph-audit-logs | log_id (S) | PHI access audit |
+| medgraph-patient-documents | document_id (S) | Document metadata |
+| medgraph-document-raw-texts | document_id (S) | Extracted PDF text |
+| medgraph-fhir-document-references | reference_id (S) | FHIR references |
+| medgraph-chat-sessions | session_id (S) | Chat history |
+| medgraph-screening-results | screening_id (S) | AI screenings |
+| medgraph-phi-redaction-maps | redaction_map_id (S) | Reversible redaction |
+
+Use `backend/scripts/create_dynamodb_tables.py` to create all tables.
+
+---
+
+## OpenSearch Serverless Setup
+
+1. Create a **VECTORSEARCH** collection named `medgraph-vectors`
+2. Create index `patient-memories` with mapping:
+
+```json
+{
+  "settings": {
+    "index": { "knn": true }
+  },
+  "mappings": {
+    "properties": {
+      "embedding": {
+        "type": "knn_vector",
+        "dimension": 1024,
+        "method": { "name": "hnsw", "space_type": "cosinesimil", "engine": "nmslib" }
+      },
+      "patient_id": { "type": "keyword" },
+      "text": { "type": "text" },
+      "source": { "type": "keyword" },
+      "encounter_date": { "type": "date" }
+    }
+  }
+}
 ```
 
-### Frontend
-```dockerfile
-FROM node:20-alpine AS build
-WORKDIR /app
-COPY package*.json ./
-RUN npm ci
-COPY . .
-RUN npm run build
+3. Configure data access policy to allow your IAM role/user.
 
-FROM nginx:alpine
-COPY --from=build /app/dist /usr/share/nginx/html
-COPY nginx.conf /etc/nginx/conf.d/default.conf
+---
+
+## S3 Bucket Setup
+
+```bash
+aws s3 mb s3://medgraph-patient-documents-<account-id> --region us-east-1
+
+# Enable default encryption
+aws s3api put-bucket-encryption \
+  --bucket medgraph-patient-documents-<account-id> \
+  --server-side-encryption-configuration '{
+    "Rules": [{"ApplyServerSideEncryptionByDefault": {"SSEAlgorithm": "AES256"}}]
+  }'
+
+# Block public access
+aws s3api put-public-access-block \
+  --bucket medgraph-patient-documents-<account-id> \
+  --public-access-block-configuration '{
+    "BlockPublicAcls": true,
+    "IgnorePublicAcls": true,
+    "BlockPublicPolicy": true,
+    "RestrictPublicBuckets": true
+  }'
 ```
 
 ---
 
-## Monitoring & Observability
+## Bedrock Guardrails Setup
 
-- **Structured Logging**: `structlog` with JSON output → CloudWatch Logs
-- **Health Check**: `GET /health` returns service status for all 3 databases
-- **Audit Trail**: Every PHI access logged to `audit_logs` collection
-- **Request IDs**: `X-Request-ID` header propagated through all services
-- **Metrics**: Token usage, latency, cache hit rate logged per LLM call
+Use `backend/scripts/setup_bedrock_guardrails.py` or create manually:
+
+- **Denied Topics:** Medical diagnosis, unauthorized PHI access
+- **Content Filters:** Hate, violence, sexual content, insults
+- **Sensitive Info:** PII/PHI detection and blocking
+- **Contextual Grounding:** Hallucination prevention (grounding threshold 0.7)
+
+---
+
+## Running Locally
+
+```bash
+# Backend
+cd backend
+pip install -r requirements.txt
+uvicorn app.main:app --reload --port 8000
+
+# Frontend
+cd frontend
+npm install
+npm run dev
+```
+
+Backend runs at `http://localhost:8000` (Swagger docs at `/docs`)  
+Frontend runs at `http://localhost:5173`
+
+---
+
+## Seed Scripts
+
+| Script | Purpose |
+|--------|---------|
+| `scripts/create_dynamodb_tables.py` | Create all DynamoDB tables |
+| `scripts/seed_super_admin.py` | Create initial super admin user |
+| `scripts/seed_test_users.py` | Create test users for all roles |
+| `scripts/seed_demo_data.py` | Seed demo patient data |
+| `scripts/seed_entities.py` | Seed Neo4j graph entities |
+| `scripts/seed_patient_mrn.py` | Generate MRNs for existing patients |
+| `scripts/setup_bedrock_guardrails.py` | Configure Bedrock Guardrails |
+
+---
+
+## Security
+
+- **No API keys in code** — all AWS auth via IAM/SigV4
+- **JWT tokens** — 60-minute expiry, HS256 signed
+- **S3 encryption** — AES256 server-side
+- **DynamoDB encryption** — AWS managed at rest
+- **Neo4j Aura** — TLS encrypted (neo4j+s://)
+- **OpenSearch Serverless** — TLS + SigV4 auth
+- **CORS** — configured in FastAPI middleware
+- **PHI never stored in graph/vector DB** — only redacted text

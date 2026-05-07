@@ -1,253 +1,193 @@
-# Frontend Architecture
-
-> React 19 · Vite 8 · Tailwind CSS 3 · Zustand · Recharts · Lucide Icons
+# MedGraph AI — Frontend Architecture
 
 ---
 
-## Directory Structure
+## Overview
+
+The frontend is a **React 19** single-page application built with **Vite**, styled with **TailwindCSS**, and using **Zustand** for state management. It provides role-based dashboards for 17 different user roles.
+
+---
+
+## Tech Stack
+
+| Library | Version | Purpose |
+|---------|---------|---------|
+| React | 19.2.5 | UI framework |
+| Vite | 8.0.10 | Build tool + dev server |
+| react-router-dom | 6.30.3 | Client-side routing |
+| Zustand | 5.0.12 | State management |
+| Axios | 1.16.0 | HTTP client |
+| TailwindCSS | 3.4.4 | Utility-first styling |
+| @headlessui/react | 2.2.10 | Accessible UI primitives |
+| lucide-react | 1.14.0 | Icons |
+| Recharts | 3.8.1 | Charts & dashboards |
+| react-markdown | 10.1.0 | Markdown rendering |
+| react-hot-toast | 2.6.0 | Toast notifications |
+| cobe | 2.0.1 | 3D globe (landing page) |
+
+---
+
+## Project Structure
 
 ```
-frontend/
-├── src/
-│   ├── main.jsx                          # React entry point
-│   ├── App.jsx                           # Router configuration (role-based)
-│   ├── index.css                         # Tailwind + component classes
-│   │
-│   ├── components/
-│   │   ├── layout/
-│   │   │   ├── AppLayout.jsx             # Authenticated layout (sidebar + content)
-│   │   │   ├── Sidebar.jsx               # Role-aware navigation sidebar
-│   │   │   ├── RoleHeader.jsx            # Top bar with context chips
-│   │   │   ├── ProtectedRoute.jsx        # Role-based route guard
-│   │   │   ├── GuestRoute.jsx            # Redirect if already authenticated
-│   │   │   ├── LandingHeader.jsx         # Public landing nav
-│   │   │   └── LandingFooter.jsx         # Public landing footer
-│   │   │
-│   │   └── ui/
-│   │       ├── Spinner.jsx               # Loading indicator (sm/md/lg/xl)
-│   │       ├── EmptyState.jsx            # Empty content placeholder
-│   │       ├── StatusDot.jsx             # Color-coded status indicator
-│   │       ├── PatientSearchBar.jsx      # Multi-field patient search
-│   │       ├── PatientChip.jsx           # Compact patient display
-│   │       ├── NotificationBell.jsx      # Notification dropdown
-│   │       └── MiniCharts.jsx            # Recharts-based visualizations
-│   │
-│   ├── pages/
-│   │   ├── Landing.jsx                   # Public landing page
-│   │   ├── Login.jsx                     # Authentication (all 17 roles)
-│   │   ├── Register.jsx                  # Patient self-registration
-│   │   ├── ProfilePage.jsx               # Self-service profile editor
-│   │   │
-│   │   ├── patient/
-│   │   │   ├── HealthRecords.jsx         # Text ingestion + entity display
-│   │   │   ├── DocumentUpload.jsx        # PDF upload with PHI redaction
-│   │   │   ├── PatientChat.jsx           # ChatGPT-style health Q&A
-│   │   │   └── PatientConsents.jsx       # Consent grant/revoke manager
-│   │   │
-│   │   ├── doctor/
-│   │   │   ├── PatientLookup.jsx         # Patient list + sparkline stats
-│   │   │   ├── ClinicalQuery.jsx         # ChatGPT-style clinical RAG
-│   │   │   ├── ScreeningInbox.jsx        # AI screening review (time-bound)
-│   │   │   ├── DoctorConsents.jsx        # Consent request form
-│   │   │   ├── FHIRExchange.jsx          # FHIR bundle generation
-│   │   │   └── PatientDetailDrawer.jsx   # Patient history + vitals charts
-│   │   │
-│   │   ├── hitl/
-│   │   │   └── HITLDashboard.jsx         # HITL validation queue + review panel
-│   │   │
-│   │   ├── admin/
-│   │   │   └── SuperAdminDashboard.jsx   # Hospital network + user management
-│   │   │
-│   │   ├── hospital/
-│   │   │   └── HospitalAdminDashboard.jsx# Departments + staff management
-│   │   │
-│   │   ├── nurse/
-│   │   │   └── NurseStation.jsx          # Ward patients + vitals + activity chart
-│   │   │
-│   │   ├── pharmacist/
-│   │   │   └── PharmacistConsole.jsx     # Prescription queue + dispensing
-│   │   │
-│   │   ├── opd/
-│   │   │   └── OPDDashboard.jsx          # Appointments + queue management
-│   │   │
-│   │   ├── ipd/
-│   │   │   └── IPDDashboard.jsx          # Admissions + discharge
-│   │   │
-│   │   ├── finance/
-│   │   │   ├── InsuranceDashboard.jsx    # Claims lifecycle management
-│   │   │   └── SchemeDashboard.jsx       # PM-JAY/MPJAY eligibility
-│   │   │
-│   │   ├── mlc/
-│   │   │   └── MLCDashboard.jsx          # Medico-legal case records
-│   │   │
-│   │   └── legal/                        # (placeholder)
-│   │
-│   ├── services/
-│   │   └── api.js                        # Axios instance + all API modules
-│   │
-│   └── store/
-│       └── authStore.js                  # Zustand auth state (login/logout/refresh)
-│
-├── public/
-│   ├── favicon.svg
-│   └── icons.svg
-│
-├── UI_Design/                            # Design system reference
-│   ├── DESIGN.md
-│   ├── theme.css
-│   ├── tokens.json
-│   └── variables.css
-│
-├── tailwind.config.js
-├── postcss.config.js
-├── vite.config.js
-├── package.json
-└── Dockerfile
+frontend/src/
+├── App.jsx                    # Root component, route definitions
+├── main.jsx                   # Entry point, React DOM render
+├── index.css                  # TailwindCSS imports + custom layers
+├── store/
+│   └── authStore.js           # Zustand auth state (user, token, login, logout)
+├── components/
+│   ├── layout/
+│   │   ├── AppLayout.jsx      # Sidebar + header + content wrapper
+│   │   ├── ProtectedRoute.jsx # Auth guard (redirects to /login)
+│   │   └── GuestRoute.jsx     # Redirect authenticated users away
+│   ├── ui/
+│   │   ├── EmptyState.jsx     # Empty state placeholder
+│   │   ├── Globe.jsx          # 3D globe (landing)
+│   │   ├── MiniCharts.jsx     # Small inline charts
+│   │   ├── NotificationBell.jsx # Header notification icon
+│   │   ├── PatientChip.jsx    # Patient identity chip
+│   │   ├── PatientSearchBar.jsx # Global patient search
+│   │   ├── Spinner.jsx        # Loading spinner
+│   │   ├── StatusDot.jsx      # Status indicator
+│   │   └── VaidyaBot.jsx      # Floating Vaidya chatbot widget
+│   ├── ConsentManager/        # Consent request/grant UI
+│   ├── DoctorDashboard/       # Doctor-specific components
+│   └── PatientPortal/         # Patient-specific components
+├── pages/
+│   ├── Landing.jsx            # Public landing page
+│   ├── Login.jsx              # Login selector (patient vs staff)
+│   ├── LoginPatient.jsx       # Patient login form
+│   ├── LoginStaff.jsx         # Staff login form
+│   ├── Register.jsx           # Patient registration
+│   ├── ProfilePage.jsx        # Self-service profile edit
+│   ├── admin/
+│   │   └── SuperAdminDashboard.jsx
+│   ├── doctor/
+│   │   ├── PatientLookup.jsx      # Search patients by MRN/name/ABHA
+│   │   ├── ClinicalQuery.jsx      # RAG chat interface
+│   │   ├── DoctorConsents.jsx     # Manage consent requests
+│   │   ├── FHIRExchange.jsx       # Generate FHIR bundles
+│   │   ├── ScreeningInbox.jsx     # View forwarded screenings
+│   │   └── PatientDetailDrawer.jsx # Patient detail side panel
+│   ├── patient/
+│   │   ├── HealthRecords.jsx      # View own health records
+│   │   ├── PatientChat.jsx        # Chat about own records
+│   │   ├── PatientConsents.jsx    # Grant/revoke consents
+│   │   └── DocumentUpload.jsx     # Upload PDF lab reports
+│   ├── nurse/
+│   │   └── NurseStation.jsx       # Vitals, notes, patient list
+│   ├── pharmacist/
+│   │   └── PharmacistConsole.jsx  # Prescription queue, dispense
+│   ├── opd/
+│   │   └── OPDDashboard.jsx       # Appointments, queue
+│   ├── ipd/
+│   │   └── IPDDashboard.jsx       # Admissions, beds, discharge
+│   ├── hospital/
+│   │   └── HospitalAdminDashboard.jsx # Departments, staff
+│   ├── finance/
+│   │   ├── InsuranceDashboard.jsx # Claims management
+│   │   └── SchemeDashboard.jsx    # Govt scheme eligibility
+│   ├── hitl/
+│   │   └── HITLDashboard.jsx      # AI screening validation
+│   └── mlc/
+│       └── MLCDashboard.jsx       # Medico-Legal Cases
+└── hooks/                         # Custom React hooks
 ```
 
 ---
 
-## Routing Architecture
+## Routing
 
-Role-based routing with automatic redirect:
+Role-based routing with automatic redirect on login:
 
-| Role | Root Path | Pages |
-|------|-----------|-------|
-| `patient` | `/patient` | HealthRecords, DocumentUpload, PatientChat, PatientConsents |
-| `doctor`, `surgeon` | `/doctor` | PatientLookup, ScreeningInbox, ClinicalQuery, DoctorConsents, FHIRExchange, MLC |
-| `hitl_validator` | `/hitl` | HITLDashboard |
-| `super_admin`, `govt_admin` | `/admin` | SuperAdminDashboard |
-| `hospital_admin` | `/hospital` | HospitalAdminDashboard |
-| `nurse`, `ward_incharge` | `/nurse` | NurseStation |
-| `pharmacist` | `/pharmacist` | PharmacistConsole |
-| `opd_staff`, `receptionist` | `/opd` | OPDDashboard |
-| `ipd_staff` | `/ipd` | IPDDashboard |
-| `insurance_officer` | `/finance` | InsuranceDashboard |
-| `scheme_officer` | `/scheme` | SchemeDashboard |
-| `police_interface` | `/mlc` | MLCDashboard |
-
-All routes wrapped in `ProtectedRoute` with `allowedRoles` enforcement.
-
----
-
-## Key Pages — Feature Details
-
-### Patient: Document Upload (`/patient/documents`)
-- Drag-and-drop PDF upload zone
-- File validation (PDF only, max 20MB)
-- Upload progress with spinner
-- Result card: pages, sections, PHI redactions, chunks indexed
-- Document history list with "View PDF" button
-- HIPAA/FHIR/PHI compliance badges
-
-### Patient: Chat (`/patient/chat`)
-- **ChatGPT-style interface** with persistent sessions
-- Left sidebar: conversation history, "New Chat" button, delete per session
-- Messages persist in MongoDB across page reloads
-- Suggested prompts for empty state
-- Typing indicator while AI responds
-- Citations shown inline under assistant messages
-- Timestamps on each message
-
-### Doctor: Clinical Query (`/doctor/chat`)
-- Same ChatGPT-style layout with session sidebar
-- Patient search picker (PatientSearchBar) for new conversations
-- Consent status bar showing active consent
-- Performance metrics (retrieval time, LLM time, cache hit)
-- Sessions scoped per patient
-- Consent-denied errors handled gracefully
-
-### Doctor: AI Screening Inbox (`/doctor/screening`)
-- List of HITL-forwarded screenings with consent timer
-- "HITL Edited" badge when summary was modified
-- Detail view: transparency label, abnormalities table, clinical summary
-- "Mark as Reviewed" button to complete pipeline
-- Access denied when consent expires
-
-### Doctor: Patient Detail Drawer
-- Slide-in drawer with full patient history
-- **Vitals trend charts** (Heart Rate, SpO2, Blood Pressure) — interactive recharts
-- Tabbed sections: Vitals, Admissions, IPD Notes, Prescriptions, Appointments
-- Alert indicators for abnormal vitals
-
-### HITL Validator Dashboard (`/hitl`)
-- Queue of pending AI screenings (priority indicators)
-- Stats: pending count, critical findings, abnormalities
-- Split-panel: queue list + review panel
-- Review panel: flagged abnormalities, AI summary (markdown)
-- 4 action buttons: Accept, Edit, Reject, Escalate
-- Each action has its own form (target doctor, consent duration, reason)
-
-### Super Admin Dashboard (`/admin`)
-- Hospital network overview with stats
-- **Hospital detail popup** (transparent overlay):
-  - Immutable identity section (name, reg number)
-  - Editable demographics (city, state, contact, empanelment)
-  - Hospital admin assignment/revocation
-  - Department listing
-- User role breakdown with counts
-- Hospital onboarding modal
-
-### Nurse Station (`/nurse`)
-- Ward patient grid with vitals badges
-- **Activity bar chart** (vitals logged per day)
-- Log Vitals modal with form
-- Shift handoff button
-- Ward Bot status monitor
+| Role | Default Route | Dashboard |
+|------|--------------|-----------|
+| patient | `/patient` | Health records, chat, consents, documents |
+| doctor, surgeon | `/doctor` | Patient lookup, clinical query, FHIR, screening |
+| nurse, ward_incharge, ward_bot | `/nurse` | Nurse station |
+| pharmacist | `/pharmacist` | Prescription queue |
+| opd_staff, receptionist | `/opd` | Appointments |
+| ipd_staff | `/ipd` | Admissions, beds |
+| hospital_admin | `/hospital` | Departments, staff |
+| super_admin, govt_admin | `/admin` | System management |
+| insurance_officer | `/finance` | Claims |
+| scheme_officer | `/scheme` | Govt schemes |
+| police_interface | `/mlc` | MLC records |
+| hitl_validator | `/hitl` | AI screening queue |
 
 ---
 
 ## State Management
 
 ### Auth Store (Zustand)
+
 ```javascript
 {
-  user: { user_id, full_name, role, permissions, hospital_id, ... },
-  token: "jwt_string",
-  isAuthenticated: boolean,
-  loading: boolean,
-  error: string | null,
-  login(email, password),
-  register(userData),
-  logout(),
-  refreshProfile(),
+  user: { user_id, email, full_name, role, permissions },
+  token: "jwt-string",
+  isAuthenticated: true/false,
+  login(token, user),
+  logout()
 }
 ```
 
-Helpers: `hasPermission(user, permission)`, `hasRole(user, ...roles)`
+Persisted to `localStorage` as `mg_token` and `mg_user`.
 
-### API Layer (`api.js`)
-- Axios instance with JWT interceptor
-- Auto-redirect to `/login` on 401
-- 30s timeout (120s for document upload)
-- Organized by domain: `authAPI`, `chatAPI`, `consentAPI`, `screeningAPI`, `documentsAPI`, etc.
+### Axios Interceptor
 
----
-
-## Visualization Components (`MiniCharts.jsx`)
-
-| Component | Props | Use Case |
-|-----------|-------|----------|
-| `SparkLine` | data, dataKey, color, height | Inline trend in stat cards |
-| `VitalsTrendChart` | data, dataKey, color, unit, refMin, refMax | Vitals over time with reference bands |
-| `MultiLineChart` | data, lines[] | Multiple metrics (e.g., systolic + diastolic) |
-| `ActivityBar` | data, dataKey, color, height | Daily activity counts |
-| `StatWithSparkline` | label, value, unit, data, trend | KPI with inline sparkline |
+- Auto-attaches `Authorization: Bearer <token>` to all requests
+- On 401 response: clears auth store, redirects to `/login`
 
 ---
 
-## Design System
+## Styling
 
-- **Colors**: Blue-600 primary, Slate grays, Emerald success, Amber warning, Red error
-- **Typography**: Inter font, sizes from 10px to 7xl
-- **Border Radius**: 2xl (16px) for cards, xl (12px) for buttons, lg (10px) for inputs
-- **Shadows**: `card` (subtle), `card-hover` (elevated), `glow` (blue glow)
-- **Animations**: `fade-in`, `slide-up`, `pulse-slow`
+- **TailwindCSS** with custom design tokens
+- Custom `@layer components` for reusable classes: `btn-primary`, `card`, `input`, `badge`
+- Color palette: brand colors + surface/neutral system
+- Responsive design with mobile-first approach
 
-### Component Classes (index.css)
-- `.btn-primary` — Blue-600, white text, rounded-xl, shadow
-- `.btn-secondary` — White, slate border, rounded-xl
-- `.btn-ghost` — Transparent, hover bg-slate-100
-- `.card` — White, rounded-2xl, border, shadow-card
-- `.input` — White, rounded-xl, slate border, blue focus ring
-- `.badge` / `.badge-green` / `.badge-blue` / `.badge-red` / `.badge-yellow` / `.badge-gray`
+---
+
+## Key Components
+
+### VaidyaBot
+Floating chatbot widget available on all authenticated pages. Connects to `/vaidya/chat` endpoint. Maintains sliding-window conversation history.
+
+### PatientSearchBar
+Global search component used by doctors/nurses. Searches by name, MRN, ABHA ID, phone number.
+
+### NotificationBell
+Real-time notification indicator in the header. Polls `/notifications/count` for unread count.
+
+### ProtectedRoute
+Route guard that checks `isAuthenticated` from Zustand store. Redirects to `/login` if not authenticated.
+
+---
+
+## Environment
+
+```env
+VITE_API_URL=http://localhost:8000
+```
+
+All API calls use this base URL via Axios instance.
+
+---
+
+## Build & Development
+
+```bash
+# Development (HMR)
+npm run dev
+
+# Production build
+npm run build
+
+# Preview production build
+npm run preview
+
+# Lint
+npm run lint
+```
