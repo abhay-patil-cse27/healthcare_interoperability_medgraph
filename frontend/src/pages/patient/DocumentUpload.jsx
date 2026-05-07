@@ -7,8 +7,15 @@ import Spinner from "../../components/ui/Spinner";
 import EmptyState from "../../components/ui/EmptyState";
 
 function DocumentCard({ doc }) {
-  const handleView = () => {
-    window.open(documentsAPI.getPdfUrl(doc.document_id), "_blank");
+  const handleView = async () => {
+    try {
+      const { data } = await documentsAPI.downloadPdf(doc.document_id);
+      const blob = new Blob([data], { type: "application/pdf" });
+      const url = URL.createObjectURL(blob);
+      window.open(url, "_blank");
+    } catch {
+      toast.error("Failed to load PDF");
+    }
   };
 
   return (
@@ -72,8 +79,14 @@ export default function DocumentUpload() {
 
   const handleUpload = async (file) => {
     if (!file) return;
+
+    // Strict PDF-only validation (prevents injection attacks)
     if (!file.name.toLowerCase().endsWith(".pdf")) {
-      toast.error("Only PDF files are supported");
+      toast.error("Only PDF files are accepted. Other formats are blocked for security.");
+      return;
+    }
+    if (file.type && file.type !== "application/pdf") {
+      toast.error("Invalid file type. Only PDF documents are allowed.");
       return;
     }
     if (file.size > 20 * 1024 * 1024) {
@@ -146,12 +159,15 @@ export default function DocumentUpload() {
                 <Upload className="w-7 h-7 text-brand-600" />
               </div>
               <p className="text-sm font-medium text-surface-700">Drop your PDF lab report here</p>
-              <p className="text-xs text-surface-400 mt-1">or click to browse · Max 20MB · PDF only</p>
+              <p className="text-xs text-surface-400 mt-1">or click to browse · Max 20MB · <span className="font-semibold text-surface-600">PDF only</span> (no images, docs, or other formats)</p>
               <div className="flex items-center gap-4 mt-4 text-xs text-surface-400">
                 <span className="flex items-center gap-1"><Shield className="w-3 h-3 text-green-500" /> HIPAA Compliant</span>
                 <span className="flex items-center gap-1"><CheckCircle2 className="w-3 h-3 text-blue-500" /> PHI Auto-Redacted</span>
                 <span className="flex items-center gap-1"><FileText className="w-3 h-3 text-purple-500" /> FHIR Compatible</span>
               </div>
+              <p className="text-[10px] text-surface-400 mt-3 max-w-sm">
+                For security, only PDF documents are accepted. Your original file is stored encrypted and never modified.
+              </p>
             </>
           )}
         </div>

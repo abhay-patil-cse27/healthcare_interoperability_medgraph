@@ -13,7 +13,7 @@ Flow:
   2. Original PDF stored in GridFS (encrypted at rest)
   3. Text extracted, sections identified with priority tags
   4. PHI REDACTED from text before vector DB ingestion
-  5. Redacted chunks ingested into Qdrant (RAG) + Neo4j (graph)
+  5. Redacted chunks ingested into vector store (RAG) + Neo4j (graph)
   6. FHIR DocumentReference created
   7. Document appears in patient's history (viewable as PDF)
   8. HITL can trigger screening from stored (redacted) data
@@ -33,7 +33,10 @@ from fastapi.responses import Response
 from typing import Optional
 
 from app.dependencies import get_db, get_current_user, require_permission, require_any_permission
-from app.services.document_service import DocumentService, chunk_document
+from app.services.document_service import (
+    DocumentService, chunk_document,
+    DOCUMENTS_COLLECTION, RAW_TEXTS_COLLECTION, FHIR_REFS_COLLECTION,
+)
 from app.services.phi_redaction_service import PHIRedactionService
 from app.services.screening_service import ScreeningService
 from app.services.audit_service import log_phi_access
@@ -84,9 +87,13 @@ async def upload_document(
     if current_user["role"] == "patient" and current_user["user_id"] != patient_id:
         raise HTTPException(status_code=403, detail="Patients can only upload their own documents")
 
-    # Validate file type
+    # Validate file type — PDF only (prevents injection attacks)
     if not file.filename.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Only PDF files are supported")
+
+    # Validate content-type header
+    if file.content_type and file.content_type != "application/pdf":
+        raise HTTPException(status_code=400, detail="Invalid file type. Only application/pdf is accepted")
 
     # Size limit: 20MB
     pdf_bytes = await file.read()
@@ -95,6 +102,13 @@ async def upload_document(
 
     if len(pdf_bytes) == 0:
         raise HTTPException(status_code=400, detail="Empty file")
+
+    # Validate PDF magic bytes (prevents renamed malicious files)
+    if not pdf_bytes[:5] == b"%PDF-":
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid PDF file. The file does not contain valid PDF data."
+        )
 
     request_id = request.headers.get("X-Request-ID", str(uuid.uuid4()))
 
@@ -123,14 +137,13 @@ async def upload_document(
     )
 
     # Update document status
-    from app.services.document_service import DOCUMENTS_COLLECTION
     await db[DOCUMENTS_COLLECTION].update_one(
         {"document_id": parsed.document_id},
         {"$set": {
-            "phi_status": "redacted",
-            "redaction_map_id": redaction_result.redaction_map_id,
+            "phi_status":         "redacted",
+            "redaction_map_id":   redaction_result.redaction_map_id,
             "redactions_applied": redaction_result.redactions_applied,
-            "redacted_fields": redaction_result.redacted_fields,
+            "redacted_fields":    redaction_result.redacted_fields,
         }},
     )
 
@@ -220,7 +233,7 @@ async def upload_document(
         "storage": {
             "original_pdf_stored": True,
             "patient_can_view_pdf": True,
-            "gridfs_stored": True,
+            "s3_stored":           True,
         },
         "fhir": {
             "document_reference_created": True,
@@ -260,8 +273,6 @@ async def get_document_metadata(
     db=Depends(get_db),
 ):
     """Get document metadata by ID."""
-    from app.services.document_service import DOCUMENTS_COLLECTION
-
     doc = await db[DOCUMENTS_COLLECTION].find_one({"document_id": document_id})
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
@@ -292,9 +303,6 @@ async def download_document_pdf(
 
     The original PDF is stored unmodified — this is the patient's health record.
     """
-    from app.services.document_service import DOCUMENTS_COLLECTION
-
-    # Verify ownership
     doc_meta = await db[DOCUMENTS_COLLECTION].find_one({"document_id": document_id})
     if not doc_meta:
         raise HTTPException(status_code=404, detail="Document not found")
@@ -348,7 +356,7 @@ async def get_fhir_document_reference(
     Get the FHIR R4 DocumentReference for this document.
     Compliant with HL7 FHIR EHR standards.
     """
-    fhir_doc = await db["fhir_document_references"].find_one({"document_id": document_id})
+    fhir_doc = await db[FHIR_REFS_COLLECTION].find_one({"document_id": document_id})
     if not fhir_doc:
         raise HTTPException(status_code=404, detail="FHIR DocumentReference not found")
 
@@ -372,15 +380,12 @@ async def trigger_screening_from_document(
     Uses the PHI-REDACTED text stored during upload.
     The LLM never sees the original PII — only redacted clinical data.
     """
-    from app.services.document_service import DOCUMENTS_COLLECTION
-
-    # Fetch document metadata
     doc_meta = await db[DOCUMENTS_COLLECTION].find_one({"document_id": document_id})
     if not doc_meta:
         raise HTTPException(status_code=404, detail="Document not found")
 
     # Fetch the raw text
-    raw_doc = await db["document_raw_texts"].find_one({"document_id": document_id})
+    raw_doc = await db[RAW_TEXTS_COLLECTION].find_one({"document_id": document_id})
     if not raw_doc:
         raise HTTPException(
             status_code=422,

@@ -81,21 +81,21 @@ Backend API at **http://localhost:8000**
 
 ## API Reference
 
-| Endpoint | Method | Auth | Description |
-|---|---|---|---|
-| `/health` | GET | — | Service health check |
-| `/auth/register` | POST | — | Create account (patient or doctor) |
-| `/auth/login` | POST | — | Get JWT token |
-| `/auth/me` | GET | Bearer | Current user profile |
-| `/memory/ingest` | POST | Bearer | Ingest health text |
-| `/memory/history/{id}` | GET | Bearer | Ingestion history |
-| `/chat/` | POST | Bearer | Consent-gated RAG query |
-| `/consent/request` | POST | Bearer (doctor) | Request patient access |
-| `/consent/grant` | POST | Bearer (patient) | Approve/deny consent |
-| `/consent/active/{id}` | GET | Bearer | List consents |
-| `/consent/{id}` | DELETE | Bearer (patient) | Revoke consent |
-| `/fhir/exchange` | POST | Bearer (doctor) | Generate FHIR R4 bundle |
-| `/fhir/bundle/{id}` | GET | Bearer (doctor) | Retrieve stored bundle |
+| Endpoint               | Method | Auth             | Description                        |
+| ------------------------| --------| ------------------| ------------------------------------|
+| `/health`              | GET    | —                | Service health check               |
+| `/auth/register`       | POST   | —                | Create account (patient or doctor) |
+| `/auth/login`          | POST   | —                | Get JWT token                      |
+| `/auth/me`             | GET    | Bearer           | Current user profile               |
+| `/memory/ingest`       | POST   | Bearer           | Ingest health text                 |
+| `/memory/history/{id}` | GET    | Bearer           | Ingestion history                  |
+| `/chat/`               | POST   | Bearer           | Consent-gated RAG query            |
+| `/consent/request`     | POST   | Bearer (doctor)  | Request patient access             |
+| `/consent/grant`       | POST   | Bearer (patient) | Approve/deny consent               |
+| `/consent/active/{id}` | GET    | Bearer           | List consents                      |
+| `/consent/{id}`        | DELETE | Bearer (patient) | Revoke consent                     |
+| `/fhir/exchange`       | POST   | Bearer (doctor)  | Generate FHIR R4 bundle            |
+| `/fhir/bundle/{id}`    | GET    | Bearer (doctor)  | Retrieve stored bundle             |
 
 Interactive docs: **http://localhost:8000/docs**
 

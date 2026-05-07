@@ -6,18 +6,18 @@ import {
 
 const FOOTER_LINKS = {
   Platform: [
-    { label: "Patient Portal",    to: "/register" },
-    { label: "Staff Login",       to: "/login" },
+    { label: "Patient Portal",    to: "/login/patient" },
+    { label: "Staff Login",       to: "/login/staff" },
     { label: "FHIR R4 Docs",     href: "https://www.hl7.org/fhir/R4/" },
     { label: "ABDM Integration",  href: "https://abdm.gov.in" },
     { label: "API Reference",     href: "http://localhost:8000/docs" },
   ],
   Roles: [
-    { label: "Doctors & Surgeons", to: "/login" },
-    { label: "Nurses & Ward",      to: "/login" },
-    { label: "Pharmacists",        to: "/login" },
-    { label: "Insurance Officers", to: "/login" },
-    { label: "Police Interface",   to: "/login" },
+    { label: "Doctors & Surgeons", to: "/login/staff" },
+    { label: "Nurses & Ward",      to: "/login/staff" },
+    { label: "Pharmacists",        to: "/login/staff" },
+    { label: "Insurance Officers", to: "/login/staff" },
+    { label: "Police Interface",   to: "/login/staff" },
   ],
   Compliance: [
     { label: "DPDP Act 2023",     href: "#" },

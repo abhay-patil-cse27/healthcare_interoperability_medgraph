@@ -1,13 +1,13 @@
 """
 Ingestion Pipeline (LangGraph) — PII-Free Knowledge Base
 ==========================================================
-Hybrid pipeline: PHI Redaction → Entity Extraction → Neo4j + Qdrant
+Hybrid pipeline: PHI Redaction → Entity Extraction → Neo4j + Vector Store
 
 CRITICAL DESIGN PRINCIPLE:
-  The knowledge base (Neo4j graph + Qdrant vectors) must NEVER contain PII.
+  The knowledge base (Neo4j graph + vector store) must NEVER contain PII.
   All text is PHI-redacted BEFORE:
     1. Being sent to the LLM for entity extraction
-    2. Being embedded and stored in Qdrant
+    2. Being embedded and stored in the vector store
     3. Being stored as node properties in Neo4j
 
 Pipeline stages:
@@ -16,7 +16,7 @@ Pipeline stages:
   3. extract_entities     — LLM extracts clinical entities from REDACTED text
   4. store_neo4j          — Store entities in graph (no PII in node properties)
   5. generate_embedding   — Embed the REDACTED text
-  6. store_qdrant         — Store REDACTED text + embedding in vector DB
+  6. store_vectors        — Store REDACTED text + embedding in vector store
   7. create_event         — Create event node for audit linkage
 """
 import json
@@ -26,10 +26,10 @@ from typing import TypedDict, Optional, List
 from datetime import datetime
 from langgraph.graph import StateGraph, END
 
-from app.services.groq_service import GroqService
+from app.services.bedrock_service import BedrockService
 from app.services.embedding_service import get_embedding_service
 from app.services.neo4j_service import Neo4jService
-from app.services.qdrant_service import QdrantService
+from app.services.opensearch_service import get_opensearch_service
 from app.services.phi_redaction_service import redact_phi
 from app.prompts.entity_extraction import (
     ENTITY_EXTRACTION_SYSTEM_PROMPT,
@@ -58,10 +58,10 @@ class IngestionState(TypedDict):
 
 class IngestionPipeline:
     def __init__(self):
-        self.groq = GroqService()
+        self.llm = BedrockService()
         self.embedding_svc = get_embedding_service()
         self.neo4j = Neo4jService()
-        self.qdrant = QdrantService()
+        self.vector_store = get_opensearch_service()
         self.graph = self._build_graph()
 
     def _build_graph(self):
@@ -71,15 +71,15 @@ class IngestionPipeline:
         g.add_node("extract_entities", self._extract_entities)
         g.add_node("store_neo4j", self._store_neo4j)
         g.add_node("generate_embedding", self._generate_embedding)
-        g.add_node("store_qdrant", self._store_qdrant)
+        g.add_node("store_vectors", self._store_vectors)
         g.add_node("create_event", self._create_event)
         g.set_entry_point("validate_input")
         g.add_edge("validate_input", "redact_phi")
         g.add_edge("redact_phi", "extract_entities")
         g.add_edge("extract_entities", "store_neo4j")
         g.add_edge("store_neo4j", "generate_embedding")
-        g.add_edge("generate_embedding", "store_qdrant")
-        g.add_edge("store_qdrant", "create_event")
+        g.add_edge("generate_embedding", "store_vectors")
+        g.add_edge("store_vectors", "create_event")
         g.add_edge("create_event", END)
         return g.compile()
 
@@ -146,11 +146,9 @@ class IngestionPipeline:
             }
         except Exception as e:
             logger.error("phi_redaction_failed", error=str(e))
-            # If redaction fails, we MUST NOT proceed with raw text
-            # Use a conservative approach: strip common PII patterns manually
             return {
                 **state,
-                "redacted_text": state["text"],  # Fallback — but log the failure
+                "redacted_text": state["text"],
                 "phi_redactions_applied": 0,
                 "errors": state["errors"] + [f"phi_redaction_fallback: {e}"],
             }
@@ -161,21 +159,18 @@ class IngestionPipeline:
         The LLM never sees original PII.
         """
         try:
-            result = await self.groq.invoke(
+            result = await self.llm.invoke(
                 system_prompt=ENTITY_EXTRACTION_SYSTEM_PROMPT,
                 user_message=build_extraction_prompt(state["redacted_text"]),
                 temperature=0.0,
+                apply_guardrails=False,  # Entity extraction is internal — skip guardrails
             )
             text = result["text"].strip()
-            # Strip markdown code fences if present
             if text.startswith("```"):
                 lines = text.split("\n")
                 text = "\n".join(lines[1:-1]) if lines[-1] == "```" else "\n".join(lines[1:])
             entities = json.loads(text.strip())
-
-            # SAFETY: Post-extraction PII scrub — remove any entity that looks like PII
             entities = self._scrub_pii_from_entities(entities)
-
             return {**state, "extracted_entities": entities}
         except Exception as e:
             logger.error("entity_extraction_failed", error=str(e))
@@ -190,17 +185,16 @@ class IngestionPipeline:
         """
         Post-extraction safety net: remove any extracted entity that
         looks like PII (names, phone numbers, addresses, IDs).
-        This is a defense-in-depth measure in case the LLM ignores instructions.
         """
         import re
 
         pii_patterns = [
-            re.compile(r'\+?\d{10,12}'),           # Phone numbers
-            re.compile(r'\b\d{4}\s?\d{4}\s?\d{4}\b'),  # Aadhaar
-            re.compile(r'[A-Z][a-z]+\s+[A-Z][a-z]+\s+[A-Z][a-z]+'),  # Full names (3 words capitalized)
-            re.compile(r'\b\d{6}\b'),              # Pin codes
-            re.compile(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}'),  # Email
-            re.compile(r'\[PATIENT\]'),            # Redaction placeholders
+            re.compile(r'\+?\d{10,12}'),
+            re.compile(r'\b\d{4}\s?\d{4}\s?\d{4}\b'),
+            re.compile(r'[A-Z][a-z]+\s+[A-Z][a-z]+\s+[A-Z][a-z]+'),
+            re.compile(r'\b\d{6}\b'),
+            re.compile(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}'),
+            re.compile(r'\[PATIENT\]'),
             re.compile(r'\[PHONE_REDACTED\]'),
             re.compile(r'\[ADDRESS_REDACTED\]'),
             re.compile(r'\[LAB_ID_REDACTED\]'),
@@ -218,7 +212,6 @@ class IngestionPipeline:
             cleaned = []
             for item in items:
                 if isinstance(item, dict):
-                    # Check all string values in the dict
                     has_pii = any(is_pii(str(v)) for v in item.values() if v)
                     if not has_pii:
                         cleaned.append(item)
@@ -233,11 +226,7 @@ class IngestionPipeline:
         return entities
 
     async def _store_neo4j(self, state: IngestionState) -> dict:
-        """
-        Store extracted entities in Neo4j graph.
-        Note: Only clinical entities are stored — no PII in node properties.
-        The patient_id is a UUID (pseudonymized), not a real-world identifier.
-        """
+        """Store extracted entities in Neo4j graph (no PII in node properties)."""
         try:
             nodes = await self.neo4j.store_entities(
                 patient_id=state["patient_id"],
@@ -251,29 +240,23 @@ class IngestionPipeline:
             return {**state, "errors": state["errors"] + [f"neo4j: {e}"]}
 
     async def _generate_embedding(self, state: IngestionState) -> dict:
-        """
-        Generate embedding from PHI-REDACTED text.
-        The embedding model never sees original PII.
-        """
+        """Generate embedding from PHI-REDACTED text via Bedrock Titan."""
         try:
             embedding = await self.embedding_svc.embed(state["redacted_text"])
             return {**state, "embedding": embedding}
         except Exception as e:
             return {**state, "errors": state["errors"] + [f"embedding: {e}"]}
 
-    async def _store_qdrant(self, state: IngestionState) -> dict:
-        """
-        Store REDACTED text + embedding in Qdrant vector DB.
-        The 'text' field in the payload is PHI-redacted — no PII stored.
-        """
+    async def _store_vectors(self, state: IngestionState) -> dict:
+        """Store REDACTED text + embedding in OpenSearch vector DB."""
         if not state["embedding"]:
             return state
         try:
             entry_id = str(uuid.uuid4())
-            await self.qdrant.index(
+            await self.vector_store.index_document(
                 patient_id=state["patient_id"],
                 entry_id=entry_id,
-                text=state["redacted_text"],  # REDACTED text only
+                text=state["redacted_text"],
                 embedding=state["embedding"],
                 source=state["source"],
                 encounter_date=state["encounter_date"],
@@ -281,7 +264,7 @@ class IngestionPipeline:
             )
             return {**state, "vector_entry_id": entry_id}
         except Exception as e:
-            return {**state, "errors": state["errors"] + [f"qdrant: {e}"]}
+            return {**state, "errors": state["errors"] + [f"opensearch: {e}"]}
 
     async def _create_event(self, state: IngestionState) -> dict:
         try:

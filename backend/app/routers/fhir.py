@@ -2,13 +2,12 @@ import uuid
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from app.models.medical import FHIRExchangeRequest, FHIRExchangeResponse
-from app.dependencies import get_db, get_current_user, require_permission, get_mongo_client
+from app.dependencies import get_db, get_current_user, require_permission, get_db_background
 from app.models.rbac import Permission
 from app.services.consent_service import ConsentService
 from app.services.neo4j_service import Neo4jService
-from app.services.qdrant_service import QdrantService
 from app.services.embedding_service import get_embedding_service
-from app.services.groq_service import GroqService
+from app.services.bedrock_service import BedrockService
 from app.services.fhir_service import FHIRService
 from app.services.audit_service import log_phi_access
 from app.config import get_settings
@@ -22,14 +21,12 @@ router = APIRouter()
 
 consent_svc = ConsentService()
 neo4j_svc = Neo4jService()
-qdrant_svc = QdrantService()
-groq_svc = GroqService()
+llm_svc = BedrockService()
 fhir_svc = FHIRService()
 
 
 async def _audit_fhir(action, patient_id, accessor_id, accessor_role, resource_type, request_id, metadata=None):
-    settings = get_settings()
-    db = get_mongo_client()[settings.mongodb_db]
+    db = get_db_background()
     await log_phi_access(
         action=action, patient_id=patient_id, accessor_id=accessor_id,
         accessor_role=accessor_role, resource_type=resource_type,
@@ -60,26 +57,15 @@ async def fhir_exchange(
 
     request_id = str(uuid.uuid4())
 
-    # Get patient graph summary
+    # Get patient graph summary from Neo4j
     graph_data = await neo4j_svc.get_patient_summary(request.patient_id)
 
-    # Get vector context
-    embedding_svc = get_embedding_service()
-    query_embedding = await embedding_svc.embed(
-        f"patient summary {request.patient_id}"
-    )
-    vector_results = await qdrant_svc.search(
-        patient_id=request.patient_id,
-        query_embedding=query_embedding,
-        scope=access.scope or "full",
-        filters=access.filters or {},
-        top_k=5,
-    )
-    vector_context = "\n\n".join(r["content"] for r in vector_results)
+    # Build context from graph data for FHIR summary
+    vector_context = ""  # TODO: AWS vector store integration
 
     # Generate LLM clinical summary
     summary_prompt = build_fhir_summary_prompt(graph_data, vector_context)
-    llm_result = await groq_svc.invoke(
+    llm_result = await llm_svc.invoke(
         system_prompt=CLINICAL_SUMMARY_SYSTEM_PROMPT,
         user_message=summary_prompt,
         max_tokens=2048,

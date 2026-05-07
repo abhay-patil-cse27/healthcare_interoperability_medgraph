@@ -9,15 +9,26 @@ logger = structlog.get_logger()
 
 
 class Neo4jService:
+    """
+    Neo4j Aura Service.
+    Connects to Neo4j Aura (cloud) via neo4j+s:// protocol.
+    Uses the configured database name for all sessions.
+    """
+
     def __init__(self):
         settings = get_settings()
         self.driver = AsyncGraphDatabase.driver(
             settings.neo4j_uri,
             auth=(settings.neo4j_user, settings.neo4j_password),
         )
+        self.database = settings.neo4j_database
 
     async def close(self):
         await self.driver.close()
+
+    def _session(self):
+        """Create a session with the configured database."""
+        return self.driver.session(database=self.database)
 
     async def store_entities(
         self,
@@ -29,7 +40,7 @@ class Neo4jService:
         nodes_created = 0
         timestamp = encounter_date or datetime.utcnow().isoformat()
 
-        async with self.driver.session() as session:
+        async with self._session() as session:
             # Merge Patient node
             await session.run(
                 "MERGE (p:Patient {patient_id: $pid}) "
@@ -175,7 +186,7 @@ class Neo4jService:
     ) -> List[dict]:
         results = []
 
-        async with self.driver.session() as session:
+        async with self._session() as session:
             if scope == "medication_only":
                 records = await session.run(
                     "MATCH (p:Patient {patient_id: $pid})-[:TAKES_MEDICATION]->(n:Medication) "
@@ -206,7 +217,7 @@ class Neo4jService:
                     k=top_k,
                 )
             else:  # full — fetch from every node type to ensure balanced coverage
-                per_label_k = max(top_k // 5, 3)  # at least 3 per label
+                per_label_k = max(top_k // 5, 3)
                 queries = [
                     ("MATCH (p:Patient {patient_id: $pid})-[:TAKES_MEDICATION]->(n:Medication) "
                      "RETURN n, 'Medication' as label LIMIT $k", per_label_k),
@@ -244,7 +255,7 @@ class Neo4jService:
             "allergies": [],
             "vitals": [],
         }
-        async with self.driver.session() as session:
+        async with self._session() as session:
             for rel, key in [
                 ("HAS_CONDITION", "conditions"),
                 ("TAKES_MEDICATION", "medications"),
@@ -264,7 +275,7 @@ class Neo4jService:
         self, patient_id: str, request_id: str, source: str, encounter_date: str
     ) -> str:
         event_id = str(uuid.uuid4())
-        async with self.driver.session() as session:
+        async with self._session() as session:
             await session.run(
                 """
                 CREATE (e:Event {event_id: $eid, patient_id: $pid, request_id: $rid,

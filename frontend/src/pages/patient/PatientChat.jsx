@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { Send, Bot, User, BookOpen, Clock, Plus, Trash2, MessageSquare, ChevronRight } from "lucide-react";
+import { Send, Bot, User, BookOpen, Clock, Plus, Trash2, MessageSquare, ChevronRight, Shield } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import toast from "react-hot-toast";
 import { chatAPI } from "../../services/api";
@@ -32,19 +32,29 @@ function MarkdownContent({ content }) {
 
 function Message({ msg }) {
   const isBot = msg.role === "assistant";
+  const isBlocked = msg.metadata?.guardrail_action === "BLOCKED";
+
   return (
     <div className={`flex gap-3 ${isBot ? "" : "flex-row-reverse"} animate-slide-up`}>
       <div className={`w-8 h-8 rounded-full flex-shrink-0 flex items-center justify-center ${
-        isBot ? "bg-blue-600" : "bg-slate-200"
+        isBot ? (isBlocked ? "bg-amber-500" : "bg-blue-600") : "bg-slate-200"
       }`}>
         {isBot ? <Bot className="w-4 h-4 text-white" /> : <User className="w-4 h-4 text-slate-600" />}
       </div>
       <div className={`max-w-[78%] ${isBot ? "" : "items-end flex flex-col"}`}>
         <div className={`px-4 py-3 rounded-2xl text-sm leading-relaxed ${
           isBot
-            ? "bg-white border border-slate-200 text-slate-800 rounded-tl-sm"
+            ? isBlocked
+              ? "bg-amber-50 border border-amber-200 text-amber-900 rounded-tl-sm"
+              : "bg-white border border-slate-200 text-slate-800 rounded-tl-sm"
             : "bg-blue-600 text-white rounded-tr-sm"
         }`}>
+          {isBot && isBlocked && (
+            <div className="flex items-center gap-2 mb-2 text-xs font-bold text-amber-700">
+              <Shield className="w-3.5 h-3.5" />
+              Safety Policy Applied
+            </div>
+          )}
           {isBot ? <MarkdownContent content={msg.content} /> : msg.content}
         </div>
         {isBot && msg.metadata?.citations?.length > 0 && (
@@ -178,7 +188,9 @@ export default function PatientChat() {
 
     try {
       const { data } = await chatAPI.query({
-        patient_id: user.user_id,
+        patient_id:     user.user_id,
+        requester_id:   user.user_id,
+        requester_role: user.role,
         query,
         session_id: activeSessionId || undefined,
       });
@@ -194,11 +206,20 @@ export default function PatientChat() {
         role: "assistant",
         content: data.response,
         timestamp: new Date().toISOString(),
-        metadata: { citations: data.citations },
+        metadata: {
+          citations: data.citations,
+          guardrail_action: data.guardrail_action,
+        },
       };
       setMessages(prev => [...prev, assistantMsg]);
     } catch (err) {
-      toast.error(err.response?.data?.detail?.reason || err.response?.data?.detail || "Query failed");
+      const detail = err.response?.data?.detail;
+      let errMsg = "Query failed";
+      if (typeof detail === "string") errMsg = detail;
+      else if (Array.isArray(detail)) errMsg = detail.map(d => d.msg || JSON.stringify(d)).join("; ");
+      else if (detail?.reason) errMsg = detail.reason;
+      else if (detail) errMsg = JSON.stringify(detail);
+      toast.error(errMsg);
       // Remove optimistic message on error
       setMessages(prev => prev.slice(0, -1));
     } finally {

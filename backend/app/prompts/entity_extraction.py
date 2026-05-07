@@ -6,7 +6,7 @@ Explicitly rejects all PII/PHI identifiers.
 
 The extracted entities go into:
   - Neo4j (graph DB) — for relational clinical knowledge
-  - Qdrant (vector DB) — for semantic search
+  - Vector store — for semantic search
 
 NEITHER database should ever contain:
   - Patient names, phone numbers, addresses

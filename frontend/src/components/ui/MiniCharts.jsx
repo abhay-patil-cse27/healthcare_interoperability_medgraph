@@ -1,11 +1,47 @@
 /**
  * MiniCharts — Lightweight reusable chart components for dashboard visualizations.
  * Uses recharts under the hood but exposes simple, role-specific interfaces.
+ *
+ * Uses a custom useContainerSize hook instead of recharts' ResponsiveContainer
+ * to avoid the "width(-1) height(-1)" warning that occurs when charts mount
+ * inside containers that haven't been laid out yet.
  */
+import { useState, useRef, useEffect, useCallback } from "react";
 import {
   LineChart, Line, AreaChart, Area, BarChart, Bar,
-  XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
+  XAxis, YAxis, Tooltip, CartesianGrid,
 } from "recharts";
+
+/**
+ * useContainerSize — Measures a container element and tracks resize.
+ * Returns [ref, { width, height }]. Chart only renders when both > 0.
+ */
+function useContainerSize() {
+  const ref = useRef(null);
+  const [size, setSize] = useState({ width: 0, height: 0 });
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+
+    const measure = () => {
+      const { width, height } = el.getBoundingClientRect();
+      setSize((prev) =>
+        prev.width === Math.floor(width) && prev.height === Math.floor(height)
+          ? prev
+          : { width: Math.floor(width), height: Math.floor(height) }
+      );
+    };
+
+    measure();
+
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  return [ref, size];
+}
 
 const COLORS = {
   blue: "#2563eb",
@@ -35,10 +71,11 @@ function MiniTooltip({ active, payload, label, unit }) {
  * SparkLine — Tiny inline trend line (no axes, just the shape)
  */
 export function SparkLine({ data, dataKey = "value", color = "blue", height = 40, className = "" }) {
+  const [ref, size] = useContainerSize();
   return (
-    <div className={`w-full ${className}`} style={{ height }}>
-      <ResponsiveContainer width="100%" height="100%">
-        <LineChart data={data} margin={{ top: 4, right: 4, bottom: 4, left: 4 }}>
+    <div ref={ref} className={`w-full ${className}`} style={{ height, minWidth: 0 }}>
+      {size.width > 0 && size.height > 0 && (
+        <LineChart data={data} width={size.width} height={size.height} margin={{ top: 4, right: 4, bottom: 4, left: 4 }}>
           <Line
             type="monotone"
             dataKey={dataKey}
@@ -49,7 +86,7 @@ export function SparkLine({ data, dataKey = "value", color = "blue", height = 40
           />
           <Tooltip content={<MiniTooltip />} />
         </LineChart>
-      </ResponsiveContainer>
+      )}
     </div>
   );
 }
@@ -58,10 +95,11 @@ export function SparkLine({ data, dataKey = "value", color = "blue", height = 40
  * VitalsTrendChart — Shows vitals over time with reference bands
  */
 export function VitalsTrendChart({ data, dataKey = "value", name = "Value", color = "blue", unit = "", height = 120, refMin, refMax }) {
+  const [ref, size] = useContainerSize();
   return (
-    <div className="w-full" style={{ height }}>
-      <ResponsiveContainer width="100%" height="100%">
-        <AreaChart data={data} margin={{ top: 8, right: 8, bottom: 4, left: 0 }}>
+    <div ref={ref} className="w-full" style={{ height, minWidth: 0 }}>
+      {size.width > 0 && size.height > 0 && (
+        <AreaChart data={data} width={size.width} height={size.height} margin={{ top: 8, right: 8, bottom: 4, left: 0 }}>
           <defs>
             <linearGradient id={`grad-${dataKey}`} x1="0" y1="0" x2="0" y2="1">
               <stop offset="5%" stopColor={COLORS[color] || color} stopOpacity={0.2} />
@@ -82,7 +120,7 @@ export function VitalsTrendChart({ data, dataKey = "value", name = "Value", colo
             activeDot={{ r: 4, fill: COLORS[color] || color }}
           />
         </AreaChart>
-      </ResponsiveContainer>
+      )}
     </div>
   );
 }
@@ -91,14 +129,15 @@ export function VitalsTrendChart({ data, dataKey = "value", name = "Value", colo
  * ActivityBar — Mini bar chart for daily/weekly activity
  */
 export function ActivityBar({ data, dataKey = "count", color = "blue", height = 80 }) {
+  const [ref, size] = useContainerSize();
   return (
-    <div className="w-full" style={{ height }}>
-      <ResponsiveContainer width="100%" height="100%">
-        <BarChart data={data} margin={{ top: 4, right: 4, bottom: 4, left: 4 }}>
+    <div ref={ref} className="w-full" style={{ height, minWidth: 0 }}>
+      {size.width > 0 && size.height > 0 && (
+        <BarChart data={data} width={size.width} height={size.height} margin={{ top: 4, right: 4, bottom: 4, left: 4 }}>
           <Bar dataKey={dataKey} fill={COLORS[color] || color} radius={[3, 3, 0, 0]} opacity={0.8} />
           <Tooltip content={<MiniTooltip />} />
         </BarChart>
-      </ResponsiveContainer>
+      )}
     </div>
   );
 }
@@ -107,10 +146,11 @@ export function ActivityBar({ data, dataKey = "count", color = "blue", height = 
  * MultiLineChart — Multiple metrics on one chart (e.g., systolic + diastolic BP)
  */
 export function MultiLineChart({ data, lines = [], height = 140 }) {
+  const [ref, size] = useContainerSize();
   return (
-    <div className="w-full" style={{ height }}>
-      <ResponsiveContainer width="100%" height="100%">
-        <LineChart data={data} margin={{ top: 8, right: 8, bottom: 4, left: 0 }}>
+    <div ref={ref} className="w-full" style={{ height, minWidth: 0 }}>
+      {size.width > 0 && size.height > 0 && (
+        <LineChart data={data} width={size.width} height={size.height} margin={{ top: 8, right: 8, bottom: 4, left: 0 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
           <XAxis dataKey="time" tick={{ fontSize: 10, fill: "#94a3b8" }} axisLine={false} tickLine={false} />
           <YAxis tick={{ fontSize: 10, fill: "#94a3b8" }} axisLine={false} tickLine={false} width={30} />
@@ -128,7 +168,7 @@ export function MultiLineChart({ data, lines = [], height = 140 }) {
             />
           ))}
         </LineChart>
-      </ResponsiveContainer>
+      )}
     </div>
   );
 }

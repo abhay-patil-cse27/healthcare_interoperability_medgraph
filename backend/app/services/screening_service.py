@@ -35,7 +35,7 @@ from app.prompts.responsible_ai import (
     ANTIGRAVITY_SCREENING_SYSTEM_PROMPT,
     build_screening_prompt,
 )
-from app.services.groq_service import GroqService
+from app.services.bedrock_service import BedrockService
 from app.services.consent_service import ConsentService
 from app.services.audit_service import log_phi_access
 from app.config import get_settings
@@ -185,7 +185,7 @@ class ScreeningService:
     """
 
     def __init__(self):
-        self.groq = GroqService()
+        self.llm = BedrockService()
         self.consent_service = ConsentService()
         self.settings = get_settings()
 
@@ -277,7 +277,7 @@ class ScreeningService:
             source_language=source_language,
         )
 
-        llm_result = await self.groq.invoke(
+        llm_result = await self.llm.invoke(
             system_prompt=ANTIGRAVITY_SCREENING_SYSTEM_PROMPT,
             user_message=user_prompt,
             max_tokens=4096,
@@ -301,7 +301,7 @@ class ScreeningService:
             critical_count=critical_count,
             stage=ScreeningStage.AI_GENERATED,
             responsible_ai_version="2.0.0",
-            model_used=self.settings.groq_model,
+            model_used=self.settings.bedrock_model_id,
             processing_time_ms=processing_time_ms,
             grounding_sources=[source_document_id] if source_document_id else [screening_id],
         )
@@ -711,30 +711,34 @@ class ScreeningService:
 
     async def get_doctor_inbox(self, doctor_id: str, db, limit: int = 50) -> List[dict]:
         """Get screenings forwarded to a specific doctor (active consent only)."""
-        cursor = db[SCREENING_COLLECTION].find({
-            "target_doctor_id": doctor_id,
-            "stage": {"$in": [
-                ScreeningStage.HITL_EDITED.value,
-                ScreeningStage.HITL_ACCEPTED.value,
-                ScreeningStage.DOCTOR_CONSENT_ACTIVE.value,
-            ]},
-            "doctor_consent_expires": {"$gt": datetime.utcnow()},
-        }).sort("summary_date", -1).limit(limit)
+        try:
+            cursor = db[SCREENING_COLLECTION].find({
+                "target_doctor_id": doctor_id,
+                "stage": {"$in": [
+                    ScreeningStage.HITL_EDITED.value,
+                    ScreeningStage.HITL_ACCEPTED.value,
+                    ScreeningStage.DOCTOR_CONSENT_ACTIVE.value,
+                ]},
+                "doctor_consent_expires": {"$gt": datetime.utcnow().isoformat()},
+            }).sort("summary_date", -1).limit(limit)
 
-        results = []
-        async for doc in cursor:
-            doc.pop("_id", None)
-            results.append({
-                "screening_id": doc["screening_id"],
-                "patient_id": doc["patient_id"],
-                "summary_date": doc["summary_date"],
-                "abnormality_count": doc.get("abnormality_count", 0),
-                "critical_count": doc.get("critical_count", 0),
-                "stage": doc.get("stage"),
-                "was_edited": doc.get("stage") == ScreeningStage.HITL_EDITED.value,
-                "consent_expires": doc.get("doctor_consent_expires"),
-            })
-        return results
+            results = []
+            async for doc in cursor:
+                doc.pop("_id", None)
+                results.append({
+                    "screening_id": doc["screening_id"],
+                    "patient_id": doc["patient_id"],
+                    "summary_date": doc["summary_date"],
+                    "abnormality_count": doc.get("abnormality_count", 0),
+                    "critical_count": doc.get("critical_count", 0),
+                    "stage": doc.get("stage"),
+                    "was_edited": doc.get("stage") == ScreeningStage.HITL_EDITED.value,
+                    "consent_expires": doc.get("doctor_consent_expires"),
+                })
+            return results
+        except Exception as e:
+            logger.warning("get_doctor_inbox_failed", error=str(e), doctor_id=doctor_id)
+            return []
 
     async def get_screening_by_id(self, screening_id: str, db) -> Optional[ScreeningSummary]:
         """Retrieve a specific screening (for HITL operators and admins)."""

@@ -9,6 +9,8 @@ import GuestRoute     from "./components/layout/GuestRoute";
 // Public pages
 import Landing  from "./pages/Landing";
 import Login    from "./pages/Login";
+import LoginPatient from "./pages/LoginPatient";
+import LoginStaff   from "./pages/LoginStaff";
 import Register from "./pages/Register";
 
 // Patient
@@ -82,8 +84,10 @@ export default function App() {
       <Route path="/landing"  element={<Landing />} />
 
       {/* ── Auth pages — GuestRoute prevents back-button re-login ─────── */}
-      <Route path="/login"    element={<GuestRoute><Login /></GuestRoute>} />
-      <Route path="/register" element={<GuestRoute><Register /></GuestRoute>} />
+      <Route path="/login"         element={<GuestRoute><Login /></GuestRoute>} />
+      <Route path="/login/patient" element={<GuestRoute><LoginPatient /></GuestRoute>} />
+      <Route path="/login/staff"   element={<GuestRoute><LoginStaff /></GuestRoute>} />
+      <Route path="/register"      element={<GuestRoute><Register /></GuestRoute>} />
 
       {/* ── Patient ──────────────────────────────────────────────────── */}
       <Route path="/patient" element={

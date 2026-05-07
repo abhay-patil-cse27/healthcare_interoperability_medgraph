@@ -32,17 +32,29 @@ function MarkdownContent({ content }) {
 
 function Message({ msg }) {
   const isBot = msg.role === "assistant";
+  const isBlocked = msg.metadata?.guardrail_action === "BLOCKED";
+
   return (
     <div className={`flex gap-3 ${isBot ? "" : "flex-row-reverse"} animate-slide-up`}>
-      <div className={`w-8 h-8 rounded-full flex-shrink-0 flex items-center justify-center ${isBot ? "bg-blue-600" : "bg-slate-700"}`}>
+      <div className={`w-8 h-8 rounded-full flex-shrink-0 flex items-center justify-center ${
+        isBot ? (isBlocked ? "bg-amber-500" : "bg-blue-600") : "bg-slate-700"
+      }`}>
         {isBot ? <Bot className="w-4 h-4 text-white" /> : <User className="w-4 h-4 text-white" />}
       </div>
       <div className={`max-w-[78%] ${isBot ? "" : "items-end flex flex-col"}`}>
         <div className={`px-4 py-3 rounded-2xl text-sm leading-relaxed ${
           isBot
-            ? "bg-white border border-slate-200 text-slate-800 rounded-tl-sm"
+            ? isBlocked
+              ? "bg-amber-50 border border-amber-200 text-amber-900 rounded-tl-sm"
+              : "bg-white border border-slate-200 text-slate-800 rounded-tl-sm"
             : "bg-slate-800 text-white rounded-tr-sm"
         }`}>
+          {isBot && isBlocked && (
+            <div className="flex items-center gap-2 mb-2 text-xs font-bold text-amber-700">
+              <AlertCircle className="w-3.5 h-3.5" />
+              Guardrail Intervention — Response filtered for HIPAA compliance
+            </div>
+          )}
           {isBot ? <MarkdownContent content={msg.content} /> : msg.content}
         </div>
         {isBot && msg.metadata?.citations?.length > 0 && (
@@ -64,6 +76,7 @@ function Message({ msg }) {
             <Clock className="w-3 h-3" />
             Retrieval {msg.metadata.retrieval_time_ms || 0}ms · LLM {msg.metadata.llm_time_ms || 0}ms
             {msg.metadata.cache_hit && <span className="badge badge-green text-[9px]">cached</span>}
+            {isBlocked && <span className="badge badge-amber text-[9px]">guardrail</span>}
           </p>
         )}
       </div>
@@ -202,6 +215,7 @@ export default function ClinicalQuery() {
           retrieval_time_ms: data.retrieval_time_ms,
           llm_time_ms: data.llm_time_ms,
           cache_hit: data.cache_hit,
+          guardrail_action: data.guardrail_action,
         },
       };
       setMessages(prev => [...prev, assistantMsg]);

@@ -1,9 +1,6 @@
 import { useState, useEffect } from "react";
-import { Link, useLocation } from "react-router-dom";
-import {
-  Activity, Menu, X, ArrowRight, ChevronRight,
-  Stethoscope, Shield, Building2, Users, Cpu, Database
-} from "lucide-react";
+import { Link } from "react-router-dom";
+import { Activity, Menu, X, ChevronRight } from "lucide-react";
 
 const NAV_LINKS = [
   { label: "Features",   href: "#features" },
@@ -61,22 +58,14 @@ export default function LandingHeader() {
             ))}
           </nav>
 
-          {/* CTA buttons */}
-          <div className="hidden md:flex items-center gap-3">
+          {/* CTA — single Login button */}
+          <div className="hidden md:flex items-center">
             <Link
               to="/login"
-              className="px-4 py-2 text-sm font-bold transition-colors"
-              style={{color: scrolled ? '#163300' : 'rgba(255,255,255,0.8)'}}
-            >
-              Staff Portal
-            </Link>
-            <Link
-              to="/register"
               className="flex items-center gap-2 px-5 py-2 text-sm font-bold rounded-full transition-all"
               style={{background: '#9FE870', color: '#163300', boxShadow: '0 0 16px rgba(159,232,112,0.3)'}}
             >
-              Register as Patient
-              <ArrowRight className="w-4 h-4" />
+              Login
             </Link>
           </div>
 
@@ -107,11 +96,8 @@ export default function LandingHeader() {
               </a>
             ))}
             <div className="pt-3 px-4 flex flex-col gap-2 border-t border-slate-100 mt-3">
-              <Link to="/login" onClick={() => setMobile(false)} className="btn-secondary justify-center text-sm py-2.5">
-                Staff Login
-              </Link>
-              <Link to="/register" onClick={() => setMobile(false)} className="btn-primary justify-center text-sm py-2.5">
-                Register as Patient <ArrowRight className="w-4 h-4" />
+              <Link to="/login" onClick={() => setMobile(false)} className="btn-primary justify-center text-sm py-2.5">
+                Login
               </Link>
             </div>
           </div>

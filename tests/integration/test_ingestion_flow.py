@@ -1,8 +1,8 @@
 """
 Integration tests for the full ingestion flow.
-Requires Docker services running: docker compose up -d
+Requires external services: MongoDB Atlas, Neo4j Aura, AWS Bedrock.
 
-Run: venv\Scripts\python.exe -m pytest tests/integration/ -v -s
+Run: python -m pytest tests/integration/ -v -s
 """
 import sys
 import os
@@ -22,13 +22,13 @@ def event_loop():
 @pytest.mark.asyncio
 @pytest.mark.integration
 async def test_health_check():
-    """Verify all three services are reachable."""
+    """Verify all services are reachable."""
     from app.config import get_settings
     settings = get_settings()
 
     # MongoDB
     from motor.motor_asyncio import AsyncIOMotorClient
-    client = AsyncIOMotorClient(settings.mongodb_url, serverSelectionTimeoutMS=3000)
+    client = AsyncIOMotorClient(settings.mongodb_url, serverSelectionTimeoutMS=5000)
     await client[settings.mongodb_db].command("ping")
 
     # Neo4j
@@ -42,35 +42,25 @@ async def test_health_check():
         assert record["n"] == 1
     await driver.close()
 
-    # Qdrant
-    from qdrant_client import QdrantClient
-    qclient = QdrantClient(host=settings.qdrant_host, port=settings.qdrant_port)
-    collections = qclient.get_collections()
-    assert collections is not None
-
 
 @pytest.mark.asyncio
 @pytest.mark.integration
 async def test_embedding_service():
-    """Verify embedding model loads and produces 384-dim vectors."""
+    """Verify Bedrock Titan embedding model produces 1024-dim vectors."""
     from app.services.embedding_service import EmbeddingService
     svc = EmbeddingService()
 
     embedding = await svc.embed("Patient has diabetes and takes metformin")
     assert isinstance(embedding, list)
-    assert len(embedding) == 384
-    # Should be unit-normalized
-    import math
-    magnitude = math.sqrt(sum(x**2 for x in embedding))
-    assert abs(magnitude - 1.0) < 1e-5
+    assert len(embedding) == 1024
 
 
 @pytest.mark.asyncio
 @pytest.mark.integration
-async def test_groq_service():
-    """Verify Groq API is reachable and returns text."""
-    from app.services.groq_service import GroqService
-    svc = GroqService()
+async def test_bedrock_service():
+    """Verify AWS Bedrock Claude is reachable and returns text."""
+    from app.services.bedrock_service import BedrockService
+    svc = BedrockService()
     result = await svc.invoke(
         system_prompt="You are a test assistant. Reply with exactly: PONG",
         user_message="PING",
@@ -85,7 +75,7 @@ async def test_groq_service():
 @pytest.mark.integration
 async def test_full_ingestion_pipeline():
     """
-    Full end-to-end ingestion: text → entities → Neo4j + Qdrant.
+    Full end-to-end ingestion: text → entities → Neo4j.
     Uses a test patient ID that won't conflict with real data.
     """
     from app.pipelines.ingestion_pipeline import IngestionPipeline
@@ -101,7 +91,6 @@ async def test_full_ingestion_pipeline():
 
     assert result["status"] in ("success", "partial")
     assert result["graph_nodes_created"] >= 1
-    assert result["vector_entry_id"] is not None
     assert len(result["errors"]) == 0 or result["status"] == "partial"
 
     # Verify entities were extracted
@@ -143,45 +132,3 @@ async def test_neo4j_store_and_retrieve():
     assert "hypertension" in condition_names
 
     await svc.close()
-
-
-@pytest.mark.asyncio
-@pytest.mark.integration
-async def test_qdrant_index_and_search():
-    """Verify Qdrant indexes a point and retrieves it by similarity."""
-    from app.services.qdrant_service import QdrantService
-    from app.services.embedding_service import EmbeddingService
-    import uuid
-
-    qdrant = QdrantService()
-    embedding_svc = EmbeddingService()
-
-    test_patient_id = "test-qdrant-patient-001"
-    test_text = "Patient takes aspirin 81mg daily for cardiovascular prevention"
-    entry_id = str(uuid.uuid4())
-
-    embedding = await embedding_svc.embed(test_text)
-
-    await qdrant.index(
-        patient_id=test_patient_id,
-        entry_id=entry_id,
-        text=test_text,
-        embedding=embedding,
-        source="integration_test",
-        encounter_date="2026-05-04T00:00:00",
-        entities={"medications": [{"name": "aspirin"}]},
-    )
-
-    # Search for it
-    query_embedding = await embedding_svc.embed("aspirin cardiovascular")
-    results = await qdrant.search(
-        patient_id=test_patient_id,
-        query_embedding=query_embedding,
-        scope="full",
-        filters={},
-        top_k=5,
-    )
-
-    assert len(results) >= 1
-    found_ids = [r["id"] for r in results]
-    assert entry_id in found_ids

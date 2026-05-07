@@ -195,6 +195,6 @@ class FHIRService:
             "bundle": bundle_dict,
             "created_at": datetime.utcnow().isoformat(),
         }
-        await db["fhir_bundles"].insert_one(doc)
+        await db.fhir_bundles.insert_one(doc)
         logger.info("fhir_bundle_stored", bundle_id=bundle_id)
         return bundle_id

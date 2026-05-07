@@ -8,29 +8,41 @@ _ENV_FILE = Path(__file__).resolve().parent.parent.parent / ".env"
 
 
 class Settings(BaseSettings):
-    # Groq
-    groq_api_key: str = Field(env="GROQ_API_KEY")
-    groq_model: str = Field(default="llama-3.3-70b-versatile", env="GROQ_MODEL")
-
-    # MongoDB
-    mongodb_url: str = Field(default="mongodb://localhost:27017", env="MONGODB_URL")
-    mongodb_db: str = Field(default="medgraph", env="MONGODB_DB")
-
-    # Neo4j
-    neo4j_uri: str = Field(default="bolt://localhost:7687", env="NEO4J_URI")
-    neo4j_user: str = Field(default="neo4j", env="NEO4J_USER")
-    neo4j_password: str = Field(default="medgraph123", env="NEO4J_PASSWORD")
-
-    # Qdrant
-    qdrant_host: str = Field(default="localhost", env="QDRANT_HOST")
-    qdrant_port: int = Field(default=6333, env="QDRANT_PORT")
-    qdrant_collection: str = Field(default="patient_memories", env="QDRANT_COLLECTION")
-
-    # Embedding
-    embedding_model: str = Field(
-        default="sentence-transformers/all-MiniLM-L6-v2", env="EMBEDDING_MODEL"
+    # AWS Bedrock — RAG / Clinical pipeline
+    aws_region: str = Field(default="us-east-1", env="AWS_REGION")
+    bedrock_model_id: str = Field(
+        default="us.anthropic.claude-sonnet-4-6", env="BEDROCK_MODEL_ID"
     )
-    embedding_dim: int = Field(default=384, env="EMBEDDING_DIM")
+    # AWS Bedrock — Vaidya Guide Bot (can be a different / newer model)
+    vaidya_model_id: str = Field(
+        default="us.anthropic.claude-3-7-sonnet-20250219-v1:0", env="VAIDYA_MODEL_ID"
+    )
+    bedrock_embedding_model_id: str = Field(
+        default="amazon.titan-embed-text-v2:0", env="BEDROCK_EMBEDDING_MODEL_ID"
+    )
+    embedding_dim: int = Field(default=1024, env="EMBEDDING_DIM")
+
+    # Bedrock Guardrails
+    bedrock_guardrail_id: str = Field(default="", env="BEDROCK_GUARDRAIL_ID")
+    bedrock_guardrail_version: str = Field(default="", env="BEDROCK_GUARDRAIL_VERSION")
+
+    # DynamoDB
+    dynamodb_table_prefix: str = Field(default="medgraph", env="DYNAMODB_TABLE_PREFIX")
+
+    # OpenSearch Serverless (Vector DB)
+    opensearch_endpoint: str = Field(env="OPENSEARCH_ENDPOINT")
+    opensearch_index: str = Field(default="patient-memories", env="OPENSEARCH_INDEX")
+
+    # S3 (Patient Documents — PDF storage, replaces GridFS)
+    s3_documents_bucket: str = Field(
+        default="medgraph-patient-documents-344759721711", env="S3_DOCUMENTS_BUCKET"
+    )
+
+    # Neo4j Aura
+    neo4j_uri: str = Field(env="NEO4J_URI")
+    neo4j_user: str = Field(default="neo4j", env="NEO4J_USER")
+    neo4j_password: str = Field(env="NEO4J_PASSWORD")
+    neo4j_database: str = Field(default="neo4j", env="NEO4J_DATABASE")
 
     # JWT
     jwt_secret_key: str = Field(env="JWT_SECRET_KEY")

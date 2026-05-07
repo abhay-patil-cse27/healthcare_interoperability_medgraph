@@ -48,7 +48,7 @@ export default function Register() {
     try {
       await register(form);
       toast.success("Account created! Please sign in.");
-      navigate("/login");
+      navigate("/login/patient");
     } catch (err) {
       toast.error(err.message || "Registration failed");
     }
@@ -163,7 +163,7 @@ export default function Register() {
 
           <p className="text-center text-sm text-slate-text mt-8 font-medium">
             Already have an account?{" "}
-            <Link to="/login" className="text-forest hover:text-lime font-black transition-colors underline decoration-2 underline-offset-4">
+            <Link to="/login/patient" className="text-forest hover:text-lime font-black transition-colors underline decoration-2 underline-offset-4">
               Sign in
             </Link>
           </p>

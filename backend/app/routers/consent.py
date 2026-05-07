@@ -1,7 +1,7 @@
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from app.models.consent import ConsentRequest, ConsentGrant
-from app.dependencies import get_db, get_current_user, require_permission, get_mongo_client
+from app.dependencies import get_db, get_current_user, require_permission, get_db_background
 from app.models.rbac import Permission
 from app.services.consent_service import ConsentService
 from app.services.audit_service import log_phi_access
@@ -13,8 +13,7 @@ consent_svc = ConsentService()
 
 
 async def _audit(action, patient_id, accessor_id, accessor_role, resource_type, request_id, metadata=None):
-    settings = get_settings()
-    db = get_mongo_client()[settings.mongodb_db]
+    db = get_db_background()
     await log_phi_access(
         action=action, patient_id=patient_id, accessor_id=accessor_id,
         accessor_role=accessor_role, resource_type=resource_type,

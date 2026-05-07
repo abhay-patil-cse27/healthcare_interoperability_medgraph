@@ -3,7 +3,7 @@ import {
   Activity, Shield, Lock, Building2, Zap, ArrowRight,
   Globe, Database, Cpu, Users, Stethoscope, Package,
   BarChart3, Scale, CheckCircle2, HeartPulse, Brain,
-  FileText, GitBranch, ChevronRight,
+  FileText, GitBranch,
 } from "lucide-react";
 import LandingHeader from "../components/layout/LandingHeader";
 import LandingFooter from "../components/layout/LandingFooter";
@@ -107,17 +107,10 @@ export default function Landing() {
 
             <div className="flex flex-wrap items-center gap-4">
               <Link
-                to="/register"
+                to="/login"
                 className="flex items-center gap-2 px-8 py-4 bg-[#9FE870] text-[#163300] rounded-full font-bold text-lg shadow-xl transition-all hover:-translate-y-1 hover:brightness-110"
               >
-                Register in minutes
-              </Link>
-              <Link
-                to="/login"
-                className="flex items-center gap-2 px-8 py-4 bg-transparent border-2 border-[#9FE870]/30 text-[#9FE870] hover:bg-[#9FE870]/10 rounded-full font-bold text-lg transition-all"
-              >
-                Staff Login
-                <ChevronRight className="w-5 h-5" />
+                Login
               </Link>
             </div>
 
@@ -274,17 +267,11 @@ export default function Landing() {
           </p>
           <div className="flex flex-wrap items-center justify-center gap-4">
             <Link
-              to="/register"
+              to="/login"
               className="flex items-center gap-2 px-8 py-4 bg-[#9FE870] text-[#163300] hover:brightness-105 rounded-full font-bold text-base shadow-[0_0_24px_rgba(159,232,112,0.35)] transition-all"
             >
-              Register as Patient
+              Login
               <ArrowRight className="w-5 h-5" />
-            </Link>
-            <Link
-              to="/login"
-              className="flex items-center gap-2 px-8 py-4 bg-transparent hover:bg-white/5 border border-[#9FE870]/30 text-[#9FE870] rounded-full font-bold text-base transition-all"
-            >
-              Staff Login
             </Link>
           </div>
         </div>

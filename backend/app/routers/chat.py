@@ -13,7 +13,7 @@ import uuid
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from app.models.medical import ChatRequest, ChatResponse
-from app.dependencies import get_db, get_current_user, require_permission, get_mongo_client
+from app.dependencies import get_db, get_current_user, require_permission, get_db_background
 from app.models.rbac import Permission
 from app.pipelines.retrieval_pipeline import RetrievalPipeline
 from app.services.consent_service import ConsentService
@@ -40,8 +40,7 @@ def get_pipeline() -> RetrievalPipeline:
 
 
 async def _audit_chat(action, patient_id, accessor_id, accessor_role, resource_type, request_id, metadata):
-    settings = get_settings()
-    db = get_mongo_client()[settings.mongodb_db]
+    db = get_db_background()
     await log_phi_access(
         action=action, patient_id=patient_id, accessor_id=accessor_id,
         accessor_role=accessor_role, resource_type=resource_type,
@@ -178,6 +177,7 @@ async def chat(
         total_time_ms=total_time_ms,
         cache_hit=cache_hit,
         history_turns=history_turns,
+        guardrail_action=result.get("guardrail_action", "NONE"),
     )
 
 

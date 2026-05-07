@@ -250,9 +250,13 @@ async def get_doctor_inbox(
     Doctor's inbox — screenings forwarded by HITL with active time-bound consent.
     Only shows screenings where consent hasn't expired.
     """
-    return await _screening_service.get_doctor_inbox(
-        doctor_id=current_user["user_id"], db=db
-    )
+    try:
+        return await _screening_service.get_doctor_inbox(
+            doctor_id=current_user["user_id"], db=db
+        )
+    except Exception as e:
+        logger.error("doctor_inbox_error", error=str(e), doctor_id=current_user["user_id"])
+        raise HTTPException(status_code=500, detail=f"Failed to load screening inbox: {str(e)}")
 
 
 @router.get("/doctor/{screening_id}", response_model=DoctorScreeningView)

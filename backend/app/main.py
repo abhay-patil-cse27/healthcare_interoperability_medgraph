@@ -11,50 +11,67 @@ warnings.filterwarnings("ignore", message=".*trapped.*error reading bcrypt versi
 warnings.filterwarnings("ignore", message=".*bcrypt.*__about__.*")
 
 from app.config import get_settings
-from app.routers import auth, memory, chat, consent, fhir, admin, hospital, legal, opd, ipd, nurse, ward_bot, scheme, insurance, mlc, prescription, notifications, activity_log, patient, profile, screening, documents
+from app.routers import auth, memory, chat, consent, fhir, admin, hospital, legal, opd, ipd, nurse, ward_bot, scheme, insurance, mlc, prescription, notifications, activity_log, patient, profile, screening, documents, vaidya
 
 logger = structlog.get_logger()
 
 
 async def _check_services() -> dict:
     """Verify all downstream services are reachable on startup."""
-    status = {"mongodb": False, "neo4j": False, "qdrant": False}
+    status = {"dynamodb": False, "neo4j": False, "bedrock": False, "opensearch": False}
     settings = get_settings()
 
-    # MongoDB
+    # DynamoDB
     try:
-        from motor.motor_asyncio import AsyncIOMotorClient
-        client = AsyncIOMotorClient(settings.mongodb_url, serverSelectionTimeoutMS=3000)
-        await client[settings.mongodb_db].command("ping")
-        status["mongodb"] = True
-        logger.info("mongodb_healthy")
+        import boto3
+        dynamodb = boto3.client("dynamodb", region_name=settings.aws_region)
+        dynamodb.describe_table(TableName=f"{settings.dynamodb_table_prefix}-users")
+        status["dynamodb"] = True
+        logger.info("dynamodb_healthy")
     except Exception as e:
-        logger.error("mongodb_unhealthy", error=str(e))
+        logger.error("dynamodb_unhealthy", error=str(e))
 
-    # Neo4j
+    # Neo4j Aura
     try:
         from neo4j import AsyncGraphDatabase
         driver = AsyncGraphDatabase.driver(
             settings.neo4j_uri,
             auth=(settings.neo4j_user, settings.neo4j_password),
         )
-        async with driver.session() as session:
+        async with driver.session(database=settings.neo4j_database) as session:
             await session.run("RETURN 1")
         await driver.close()
         status["neo4j"] = True
-        logger.info("neo4j_healthy")
+        logger.info("neo4j_aura_healthy")
     except Exception as e:
-        logger.error("neo4j_unhealthy", error=str(e))
+        logger.error("neo4j_aura_unhealthy", error=str(e))
 
-    # Qdrant
+    # AWS Bedrock
     try:
-        from qdrant_client import QdrantClient
-        client = QdrantClient(host=settings.qdrant_host, port=settings.qdrant_port)
-        client.get_collections()
-        status["qdrant"] = True
-        logger.info("qdrant_healthy")
+        import boto3
+        bedrock_mgmt = boto3.client("bedrock", region_name=settings.aws_region)
+        bedrock_mgmt.list_foundation_models(byOutputModality="TEXT")
+        status["bedrock"] = True
+        logger.info("bedrock_healthy")
     except Exception as e:
-        logger.error("qdrant_unhealthy", error=str(e))
+        logger.error("bedrock_unhealthy", error=str(e))
+
+    # OpenSearch Serverless
+    try:
+        from opensearchpy import OpenSearch, RequestsHttpConnection, AWSV4SignerAuth
+        import boto3
+        credentials = boto3.Session().get_credentials()
+        auth = AWSV4SignerAuth(credentials, settings.aws_region, "aoss")
+        client = OpenSearch(
+            hosts=[{"host": settings.opensearch_endpoint, "port": 443}],
+            http_auth=auth, use_ssl=True, verify_certs=True,
+            connection_class=RequestsHttpConnection,
+        )
+        client.indices.exists(index=settings.opensearch_index)
+        status["opensearch"] = True
+        logger.info("opensearch_healthy")
+    except Exception as e:
+        logger.error("opensearch_unhealthy", error=str(e))
 
     return status
 
@@ -101,10 +118,19 @@ def create_app() -> FastAPI:
         return response
 
     # Global exception handler — MUST include CORS header or browser sees it as CORS error
+    from fastapi.exceptions import RequestValidationError
+    from starlette.exceptions import HTTPException as StarletteHTTPException
+    import traceback
+
     @app.exception_handler(Exception)
     async def global_exception_handler(request: Request, exc: Exception):
+        # Let FastAPI handle HTTP exceptions and validation errors
+        if isinstance(exc, (StarletteHTTPException, RequestValidationError)):
+            raise exc
+
         request_id = request.headers.get("X-Request-ID", "unknown")
-        logger.error("unhandled_exception", error=str(exc), request_id=request_id)
+        trace = traceback.format_exc()
+        logger.error("unhandled_exception", error=str(exc), traceback=trace, request_id=request_id)
         return JSONResponse(
             status_code=500,
             content={"detail": str(exc)[:200], "request_id": request_id},
@@ -134,6 +160,7 @@ def create_app() -> FastAPI:
     app.include_router(profile.router,       prefix="/profile",        tags=["Profile"])
     app.include_router(screening.router,     prefix="/screening",      tags=["Responsible AI Screening"])
     app.include_router(documents.router,     prefix="/documents",      tags=["Document Upload"])
+    app.include_router(vaidya.router,        prefix="/vaidya",          tags=["Vaidya Guide Bot"])
 
     @app.get("/health", tags=["Health"])
     async def health_check():

@@ -5,8 +5,6 @@ from typing import Optional
 
 logger = structlog.get_logger()
 
-COLLECTION = "audit_logs"
-
 
 async def log_phi_access(
     action: str,
@@ -19,14 +17,19 @@ async def log_phi_access(
     metadata: Optional[dict] = None,
 ) -> None:
     """
-    Write a PHI access audit log entry to MongoDB.
-    Patient ID is partially masked in logs (first 8 chars only).
+    Write a PHI access audit log entry to DynamoDB.
+    Table: medgraph-audit-logs
+    PK: patient_id, SK: timestamp#event_id
     """
+    timestamp = datetime.utcnow().isoformat()
+    event_id = str(uuid.uuid4())
+
     event = {
-        "event_id": str(uuid.uuid4()),
-        "timestamp": datetime.utcnow().isoformat(),
-        "action": action,
         "patient_id": patient_id,
+        "sort_key": f"{timestamp}#{event_id}",
+        "event_id": event_id,
+        "timestamp": timestamp,
+        "action": action,
         "accessor_id": accessor_id,
         "accessor_role": accessor_role,
         "resource_type": resource_type,
@@ -35,7 +38,7 @@ async def log_phi_access(
     }
 
     try:
-        await db[COLLECTION].insert_one(event)
+        await db.audit_logs.insert_one(event)
         logger.info(
             "phi_access_logged",
             action=action,

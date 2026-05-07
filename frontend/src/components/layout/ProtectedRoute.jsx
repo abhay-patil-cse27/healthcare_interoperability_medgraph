@@ -1,21 +1,39 @@
-import { Navigate, useLocation } from "react-router-dom";
-import { ShieldAlert, ArrowLeft } from "lucide-react";
+import { Navigate, useNavigate, useLocation } from "react-router-dom";
+import { ShieldAlert, ArrowLeft, Home } from "lucide-react";
 import useAuthStore from "../../store/authStore";
+
+// Role → home path mapping
+const ROLE_HOME = {
+  super_admin:      "/admin",
+  govt_admin:       "/admin",
+  hospital_admin:   "/hospital",
+  doctor:           "/doctor",
+  surgeon:          "/doctor",
+  nurse:            "/nurse",
+  ward_incharge:    "/nurse",
+  ward_bot:         "/nurse",
+  pharmacist:       "/pharmacist",
+  opd_staff:        "/opd",
+  ipd_staff:        "/ipd",
+  receptionist:     "/opd",
+  insurance_officer:"/finance",
+  scheme_officer:   "/scheme",
+  police_interface: "/mlc",
+  hitl_validator:   "/hitl",
+  patient:          "/patient",
+};
 
 /**
  * ProtectedRoute — gate for authenticated routes.
  *
  * Behaviour:
  * - Not authenticated → redirect to /login (preserving intended URL)
- * - Wrong role → show Access Denied screen (NOT a redirect, so back button works)
+ * - Wrong role → show Access Denied screen with navigation to user's home
  * - Correct role → render children
- *
- * NOTE: Does NOT clear auth state. Back button pressing when logged out
- *       simply redirects to /login since isAuthenticated=false (token gone).
- *       Session is preserved in localStorage until explicit logout.
  */
 export default function ProtectedRoute({ children, allowedRoles }) {
   const { isAuthenticated, user } = useAuthStore();
+  const navigate = useNavigate();
   const location = useLocation();
 
   // Not authenticated — go to login, remember where they were going
@@ -23,8 +41,19 @@ export default function ProtectedRoute({ children, allowedRoles }) {
     return <Navigate to="/login" state={{ from: location }} replace />;
   }
 
-  // Wrong role — show inline access denied (back button still works)
+  // Wrong role — show inline access denied with proper navigation
   if (allowedRoles && !allowedRoles.includes(user?.role)) {
+    const homePath = ROLE_HOME[user?.role] || "/";
+
+    const handleGoBack = () => {
+      // If there's browser history, go back; otherwise navigate to role home
+      if (window.history.length > 1) {
+        navigate(-1);
+      } else {
+        navigate(homePath, { replace: true });
+      }
+    };
+
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
         <div className="text-center max-w-sm animate-slide-up">
@@ -38,13 +67,22 @@ export default function ProtectedRoute({ children, allowedRoles }) {
           <p className="text-xs text-slate-400 mb-6">
             Required: {allowedRoles.join(", ")}
           </p>
-          <button
-            onClick={() => window.history.back()}
-            className="btn-secondary mx-auto"
-          >
-            <ArrowLeft className="w-4 h-4" />
-            Go Back
-          </button>
+          <div className="flex items-center justify-center gap-3">
+            <button
+              onClick={handleGoBack}
+              className="btn-secondary"
+            >
+              <ArrowLeft className="w-4 h-4" />
+              Go Back
+            </button>
+            <button
+              onClick={() => navigate(homePath, { replace: true })}
+              className="btn-primary"
+            >
+              <Home className="w-4 h-4" />
+              My Dashboard
+            </button>
+          </div>
         </div>
       </div>
     );
