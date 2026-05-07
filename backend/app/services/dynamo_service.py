@@ -15,6 +15,7 @@ from decimal import Decimal
 from datetime import datetime
 from typing import Optional, List, Any
 from functools import lru_cache
+from concurrent.futures import ThreadPoolExecutor
 
 import boto3
 from boto3.dynamodb.conditions import Key, Attr
@@ -23,6 +24,9 @@ from botocore.exceptions import ClientError
 from app.config import get_settings
 
 logger = structlog.get_logger()
+
+# Dedicated thread pool — survives uvicorn --reload cycles
+_EXECUTOR = ThreadPoolExecutor(max_workers=10, thread_name_prefix="dynamo")
 
 
 def _convert_floats(obj):
@@ -120,7 +124,7 @@ class DynamoTable:
         # Remove None values — DynamoDB doesn't store None
         clean_item = {k: v for k, v in clean_item.items() if v is not None}
         loop = asyncio.get_event_loop()
-        await loop.run_in_executor(None, lambda: self.table.put_item(Item=clean_item))
+        await loop.run_in_executor(_EXECUTOR, lambda: self.table.put_item(Item=clean_item))
         return item
 
     async def find_one(self, key: dict = None, **kwargs) -> Optional[dict]:
