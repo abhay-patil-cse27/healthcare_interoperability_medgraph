@@ -1,0 +1,113 @@
+graph TB
+    %% ─── Frontend Layer ───────────────────────────────────────────
+    subgraph Frontend["Frontend (React 19 + Vite)"]
+        UI[Web UI<br/>TailwindCSS + Headless UI]
+        Router[React Router v6<br/>Role-Based Routing]
+        State[Zustand Store<br/>Auth + State]
+        Charts[Recharts<br/>Dashboards]
+    end
+
+    %% ─── API Layer ───────────────────────────────────────────────
+    subgraph API["Backend (FastAPI + Uvicorn)"]
+        AuthRouter[Auth Router<br/>JWT + bcrypt]
+        ConsentRouter[Consent Router<br/>Consent-Gated Access]
+        ChatRouter[Chat Router<br/>Clinical Q&A]
+        MemoryRouter[Memory Router<br/>Record Ingestion]
+        FHIRRouter[FHIR Router<br/>R4 Bundle Export]
+        DocRouter[Document Router<br/>PDF Upload/Download]
+        AdminRouter[Admin Router<br/>RBAC Management]
+        AuditSvc[Audit Service<br/>structlog]
+        PHIRedact[PHI Redaction<br/>HIPAA Safe Harbor]
+    end
+
+    %% ─── AI Pipeline Layer ───────────────────────────────────────
+    subgraph Pipelines["AI Pipelines (LangGraph)"]
+        subgraph Ingestion["Ingestion Pipeline"]
+            I1[Validate Input] --> I2[Redact PHI]
+            I2 --> I3[Extract Entities<br/>Bedrock Claude]
+            I3 --> I4[Store Graph<br/>Neo4j]
+            I4 --> I5[Generate Embedding<br/>Bedrock Titan]
+            I5 --> I6[Store Vectors<br/>OpenSearch]
+            I6 --> I7[Create Audit Event]
+        end
+        subgraph Retrieval["Retrieval Pipeline"]
+            R1[Validate Scope] --> R2[Embed Query<br/>Bedrock Titan]
+            R2 --> R3[Parallel Search<br/>Neo4j + OpenSearch]
+            R3 --> R4[Hybrid Rank<br/>Graph 0.5 + Vector 0.3 + Recency 0.2]
+            R4 --> R5[Build Context<br/>Top 8 Results]
+            R5 --> R6[LLM Response<br/>Bedrock Claude]
+            R6 --> R7[Attach Citations]
+        end
+    end
+
+    %% ─── AWS Services Layer ──────────────────────────────────────
+    subgraph AWS["AWS Cloud Services"]
+        subgraph BedrockSvc["Amazon Bedrock"]
+            Claude[Claude Sonnet 4.6<br/>Clinical RAG]
+            Vaidya[Claude 3.7 Sonnet<br/>Vaidya Bot]
+            Titan[Titan Embed v2<br/>1024-dim Vectors]
+            Guardrails[Bedrock Guardrails<br/>HIPAA Filtering]
+        end
+        DynamoDB[(DynamoDB<br/>Users, Consents, Audit<br/>Chat, Documents)]
+        S3[(S3 Bucket<br/>Encrypted PDFs<br/>AES256)]
+        OpenSearch[(OpenSearch Serverless<br/>Vector Search<br/>Cosine Similarity)]
+        IAM[IAM + SigV4<br/>Auth]
+    end
+
+    %% ─── External Services ───────────────────────────────────────
+    subgraph External["External Services"]
+        Neo4j[(Neo4j Aura<br/>Graph Database<br/>Clinical Entities)]
+    end
+
+    %% ─── Connections: Frontend → Backend ─────────────────────────
+    UI -->|Axios + JWT| API
+    Router --> UI
+    State --> UI
+    Charts --> UI
+
+    %% ─── Connections: Backend → Pipelines ────────────────────────
+    MemoryRouter --> Ingestion
+    ChatRouter --> Retrieval
+    DocRouter -->|PDF Text| Ingestion
+
+    %% ─── Connections: Backend → AWS ──────────────────────────────
+    AuthRouter --> DynamoDB
+    ConsentRouter --> DynamoDB
+    AuditSvc --> DynamoDB
+    DocRouter --> S3
+    DocRouter --> DynamoDB
+    FHIRRouter --> DynamoDB
+    AdminRouter --> DynamoDB
+
+    %% ─── Connections: Pipelines → AWS ────────────────────────────
+    I3 --> Claude
+    I3 --> Guardrails
+    I5 --> Titan
+    I6 --> OpenSearch
+    I4 --> Neo4j
+    I7 --> DynamoDB
+
+    R2 --> Titan
+    R3 --> Neo4j
+    R3 --> OpenSearch
+    R6 --> Claude
+    R6 --> Guardrails
+
+    %% ─── Connections: Auth ───────────────────────────────────────
+    API -.->|SigV4 Signing| IAM
+    ChatRouter -->|Vaidya Bot| Vaidya
+
+    %% ─── Styling ────────────────────────────────────────────────
+    classDef frontend fill:#dbeafe,stroke:#2563eb,stroke-width:2px
+    classDef backend fill:#fef3c7,stroke:#d97706,stroke-width:2px
+    classDef pipeline fill:#ede9fe,stroke:#7c3aed,stroke-width:2px
+    classDef aws fill:#fce7f3,stroke:#db2777,stroke-width:2px
+    classDef db fill:#d1fae5,stroke:#059669,stroke-width:2px
+    classDef external fill:#e0e7ff,stroke:#4f46e5,stroke-width:2px
+
+    class UI,Router,State,Charts frontend
+    class AuthRouter,ConsentRouter,ChatRouter,MemoryRouter,FHIRRouter,DocRouter,AdminRouter,AuditSvc,PHIRedact backend
+    class I1,I2,I3,I4,I5,I6,I7,R1,R2,R3,R4,R5,R6,R7 pipeline
+    class Claude,Vaidya,Titan,Guardrails,DynamoDB,S3,OpenSearch,IAM aws
+    class Neo4j external
+n  
