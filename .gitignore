@@ -7,11 +7,16 @@
 .env.local
 .env.production
 .env.staging
+.env.development
 !.env.example
 secrets/
 .secrets/
 SECRETS.md
 **/SECRETS.md
+*.pem
+*.key
+*.crt
+*.p12
 
 # ── Python ────────────────────────────────────────────────────────────────────
 __pycache__/
@@ -24,6 +29,7 @@ __pycache__/
 venv/
 env/
 .venv/
+ENV/
 pip-log.txt
 pip-delete-this-directory.txt
 *.egg-info/
@@ -31,6 +37,10 @@ pip-delete-this-directory.txt
 dist/
 build/
 .eggs/
+*.whl
+.mypy_cache/
+.ruff_cache/
+.pytype/
 
 # ── Node / Frontend ───────────────────────────────────────────────────────────
 node_modules/
@@ -39,6 +49,10 @@ frontend/dist/
 frontend/dist-ssr/
 *.local
 .vite/
+.parcel-cache/
+.turbo/
+.next/
+.nuxt/
 
 # ── IDE & Editors ─────────────────────────────────────────────────────────────
 .vscode/
@@ -49,6 +63,9 @@ frontend/dist-ssr/
 *.sublime-project
 *.sublime-workspace
 *.code-workspace
+.project
+.classpath
+.settings/
 
 # ── OS Files ──────────────────────────────────────────────────────────────────
 .DS_Store
@@ -59,6 +76,8 @@ frontend/dist-ssr/
 Thumbs.db
 ehthumbs.db
 Desktop.ini
+$RECYCLE.BIN/
+*.lnk
 
 # ── Testing ───────────────────────────────────────────────────────────────────
 .pytest_cache/
@@ -68,12 +87,17 @@ htmlcov/
 .nox/
 coverage.xml
 *.cover
+*.py,cover
+.hypothesis/
+junit.xml
+test-results/
 
 # ── Docker (local volumes) ────────────────────────────────────────────────────
 data/
 mongo_data/
 neo4j_data/
 qdrant_data/
+docker-compose.override.yml
 
 # ── Logs ──────────────────────────────────────────────────────────────────────
 *.log
@@ -82,12 +106,37 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
+lerna-debug.log*
 
 # ── Kiro Agent (local workspace config) ──────────────────────────────────────
 .kiro/
+
+# ── AWS ───────────────────────────────────────────────────────────────────────
+.aws/
+cdk.out/
+.cdk.staging/
+samconfig.toml
 
 # ── Misc ──────────────────────────────────────────────────────────────────────
 *.bak
 *.tmp
 *.temp
 *.orig
+*.patch
+*.diff
+*.pid
+*.seed
+*.gz
+*.zip
+*.tar
+*.rar
+
+# ── Sensitive Data Files ───────────────────────────────────────────────────────
+medgraph_passwords.csv
+*.csv
+!seed_data/*.csv
+
+# ── Generated / Build Artifacts ───────────────────────────────────────────────
+-
+*.db
+*.sqlite3
